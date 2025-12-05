@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+python-dotenv
+python-multipart
+celery[redis]
+redis
+eventlet
+google-generativeai
+boto3
+supabase
+requests

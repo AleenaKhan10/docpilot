@@ -1,0 +1,6 @@
+.env
+test_video.mp4
+tutorial_video.mp4
+temp_data
+final_output
+__pycache__
