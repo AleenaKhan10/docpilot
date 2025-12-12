@@ -8,11 +8,8 @@ from core.config import settings
 
 # Configure Gemini
 
-api_key_google= "AIzaSyBWGgFFovMw4y5kX3dtwB13vk-hu1JMMg4"
+api_key_google= settings.GOOGLE_API_KEY
 genai.configure(api_key=api_key_google)
-# genai.configure(api_key=settings.GOOGLE_API_KEY)
-print("API_KEY: ", api_key_google)
-
 
 model_flash = genai.GenerativeModel("gemini-2.5-flash")
 
