@@ -1,0 +1,77 @@
+[2025-12-13 00:17:48] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:18:17] [INFO] [uvicorn.access]: 127.0.0.1:55952 - "GET /docs HTTP/1.1" 200
+[2025-12-13 00:18:18] [INFO] [uvicorn.access]: 127.0.0.1:55952 - "GET /openapi.json HTTP/1.1" 200
+[2025-12-13 00:19:09] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[2025-12-13 00:19:09] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[2025-12-13 00:19:11] [INFO] [uvicorn.access]: 127.0.0.1:56577 - "POST /api/v1/videos/ HTTP/1.1" 200
+[2025-12-13 00:27:43] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:28:05] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:28:17] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:28:28] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:28:39] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:28:50] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:29:01] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:29:11] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:29:22] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:29:34] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:34:56] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:39:36] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:39:54] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:40:05] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:40:16] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:40:27] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:40:38] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:40:48] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:44:48] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:44:58] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:45:34] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[2025-12-13 00:45:34] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[2025-12-13 00:45:37] [INFO] [uvicorn.access]: 127.0.0.1:61568 - "POST /api/v1/videos/ HTTP/1.1" 200
+[2025-12-13 00:48:43] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:48:55] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:49:06] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:49:33] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:49:46] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:49:58] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:50:09] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:50:21] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:50:33] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[2025-12-13 00:50:36] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[2025-12-13 00:50:36] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[2025-12-13 00:50:39] [INFO] [uvicorn.access]: 127.0.0.1:49397 - "POST /api/v1/videos/ HTTP/1.1" 200
+[13-12-2025 00:53:39] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[13-12-2025 00:53:49] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[13-12-2025 00:54:01] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[13-12-2025 00:54:12] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[13-12-2025 00:54:22] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[13-12-2025 00:54:32] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[13-12-2025 00:54:35] [INFO] [uvicorn.access]: 127.0.0.1:53302 - "GET /docs HTTP/1.1" 200
+[13-12-2025 00:54:35] [INFO] [uvicorn.access]: 127.0.0.1:53302 - "GET /openapi.json HTTP/1.1" 200
+[13-12-2025 00:54:50] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[13-12-2025 00:54:50] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[13-12-2025 00:54:54] [INFO] [uvicorn.access]: 127.0.0.1:53303 - "POST /api/v1/videos/ HTTP/1.1" 200
+[13-12-2025 00:56:18] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[13-12-2025 00:56:32] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[13-12-2025 00:58:11] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[13-12-2025 00:58:11] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[13-12-2025 00:58:15] [INFO] [uvicorn.access]: 127.0.0.1:56087 - "POST /api/v1/videos/ HTTP/1.1" 200

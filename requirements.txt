@@ -11,3 +11,8 @@ google-generativeai
 boto3
 supabase
 requests
+openai
+Pillow
+numpy
+faster-whisper
+tenacity

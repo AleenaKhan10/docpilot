@@ -1,3 +1,4 @@
+
 import os
 import json
 import time
@@ -6,17 +7,19 @@ import google.generativeai as genai
 from core.config import settings
 
 # Configure Gemini
-genai.configure(api_key=settings.GOOGLE_API_KEY)
-# Flash model fast aur cost-effective hai
+
+api_key_google= "AIzaSyBWGgFFovMw4y5kX3dtwB13vk-hu1JMMg4"
+genai.configure(api_key=api_key_google)
+# genai.configure(api_key=settings.GOOGLE_API_KEY)
+print("API_KEY: ", api_key_google)
+
+
 model_flash = genai.GenerativeModel("gemini-2.5-flash")
 
-# --- HELPER 1: JSON CLEANER ---
+# --- HELPER: JSON CLEANER ---
 def _clean_json_response(response_text: str):
-    """
-    Cleans the ``````` from Gemini response and returns Pure JSON.
-    """
     try:
-        if "```" in response_text: 
+        if "```" in response_text:
             match = re.search(r"```(?:json)?\s*(.*)\s*```", response_text, re.DOTALL)
             if match:
                 return match.group(1)
@@ -24,27 +27,25 @@ def _clean_json_response(response_text: str):
     except Exception:
         return response_text
 
-# --- HELPER 2: FIND AUDIO FOR FRAME ---
+# --- HELPER: AUDIO CONTEXT ---
 def _get_audio_context_for_timestamp(timestamp, transcript):
-    """
-    Check karta hai ke is waqt (timestamp par) user kuch bol raha hai ya nahi.
-    Agar bol raha hai to text return karega, warna None.
-    """
+    if not transcript:
+        return None
+    
+    context_text = []
     for segment in transcript:
         start = segment.get("start", 0)
         end = segment.get("end", 0)
         text = segment.get("text", "")
         
-        # Agar current timestamp segment ke andar ya qareeb hai (2 sec buffer)
-        if start - 2 <= timestamp <= end + 1:
-            return text
-    return None
+        # Buffer: 2 seconds before and after
+        if (start - 2.0 <= timestamp <= end + 2.0):
+            context_text.append(text)
+    
+    return " ".join(context_text) if context_text else None
 
-# --- MAIN TRANSCRIPTION FUNCTION ---
+# --- TRANSCRIPTION (Fixed: Thora Lenient) ---
 def transcribe_audio_gemini(audio_path: str):
-    """
-    Audio ko text mein badalta hai (Verbatim Mode).
-    """
     if not audio_path or not os.path.exists(audio_path):
         return []
 
@@ -53,13 +54,12 @@ def transcribe_audio_gemini(audio_path: str):
         audio_file = genai.upload_file(path=audio_path)
         print("🧠 Gemini Hearing: Analyzing audio...")
         
+        # Prompt thora loose kiya hai taake 0 segments na aayein
         prompt = """
-        Transcribe this audio VERBATIM (word-for-word).
-        RULES:
-        1. Do NOT summarize. Write exactly what is spoken.
-        2. Break down speech into small segments with accurate timestamps.
-        
-        Return ONLY raw JSON: [{"start": 0.0, "end": 2.0, "text": "Hello world"}]
+        Transcribe this audio VERBATIM.
+        1. Capture all spoken words accurately.
+        2. Provide timestamps.
+        3. Return ONLY raw JSON: [{"start": 0.0, "end": 2.0, "text": "..."}]
         """
         response = model_flash.generate_content(
             [prompt, audio_file],
@@ -68,7 +68,6 @@ def transcribe_audio_gemini(audio_path: str):
         
         cleaned_text = _clean_json_response(response.text)
         data = json.loads(cleaned_text)
-        
         print(f"🔍 DEBUG: Transcript contains {len(data)} segments.")
         return data
     except Exception as e:
@@ -76,130 +75,50 @@ def transcribe_audio_gemini(audio_path: str):
         return []
 
 # ======================================================
-# 🔥 RASTA 1: VISUAL ONLY (Agar video bilkul silent hai)
+# 🔥 THE ENTERPRISE GENERATOR LOGIC (With Logs) 🔥
 # ======================================================
-def _generate_visual_only(frames_dir, interval):
-    print("🔹 Mode: Visual-Only (Complete Silent Video)")
+def generate_documentation_steps(transcript: list, frames_dir: str, interval: int = 2):
+    print("🔹 Mode: Enterprise Production Flow")
     generated_steps = []
     
+    # 1. Get all frames
     frames_paths = sorted([
         os.path.join(frames_dir, f) for f in os.listdir(frames_dir) if f.endswith(".jpg")
     ])
     
-    # Har frame check karenge
+    total_frames = len(frames_paths)
+    print(f"📊 Total Frames to Analyze: {total_frames}")
+
+    # 2. Iterate EVERY frame
     for i, frame_path in enumerate(frames_paths):
-        # Optimization: Har 2nd frame uthao taake duplicate kam ho
-        if i % 2 != 0: continue
         
         timestamp = i * interval
-        print(f"   -> Analyzing Frame at {timestamp}s...")
-        
-        # --- PROMPT: DEDUCE ACTION FROM SCREEN ---
-        prompt = """
-        You are a Senior Technical Writer creating an SOP.
-        
-        TASK:
-        Analyze this UI screenshot. Deduce the user's action based on visual cues (cursors, highlighted buttons, filled fields).
-        
-        WRITING STANDARDS:
-        1. **Title:** Action Verb + Object (e.g., "Navigate to Dashboard").
-        2. **Description:** Describe the action + **UI Element** + Location.
-           - Ex: "Click the **Settings** icon in the top-right header."
-        3. **Static Check:** If the screen looks idle with no action, return null.
-
-        Return JSON ONLY: { "title": "...", "description": "..." }
-        """
-        
-        try:
-            uploaded_file = genai.upload_file(frame_path)
-            response = model_flash.generate_content(
-                [prompt, uploaded_file],
-                generation_config={"response_mime_type": "application/json"}
-            )
-            
-            cleaned_text = _clean_json_response(response.text)
-            if not cleaned_text: continue
-            
-            step_data = json.loads(cleaned_text)
-            if not step_data: continue
-
-            # --- DEDUPLICATION (Duplicate hatao) ---
-            if generated_steps:
-                last_step = generated_steps[-1]
-                if last_step['title'] == step_data.get("title"):
-                    continue
-
-            generated_steps.append({
-                "step_number": len(generated_steps) + 1,
-                "timestamp": timestamp,
-                "image_path": frame_path,
-                "title": step_data.get("title", "Step"),
-                "description": step_data.get("description", "Action performed.")
-            })
-            time.sleep(1) 
-        except Exception:
-            pass
-            
-    return generated_steps
-
-# ======================================================
-# 🔥 RASTA 2: AUDIO DRIVEN (Frames + Audio Check)
-# ======================================================
-def _generate_with_audio(transcript, frames_dir, interval):
-    print("🔹 Mode: Hybrid Audio-Visual (Frame-First Strategy)")
-    generated_steps = []
-    
-    # 1. Frames ki list banao
-    frames_paths = sorted([
-        os.path.join(frames_dir, f) for f in os.listdir(frames_dir) if f.endswith(".jpg")
-    ])
-    
-    # 2. Frames par loop chalao (Time ke hisaab se)
-    for i, frame_path in enumerate(frames_paths):
-        # Optimization: Har 2nd frame check karo
-        if i % 2 != 0: continue
-        
-        timestamp = i * interval
-        
-        # 3. Check karo: Kya is waqt koi Audio hai?
         audio_text = _get_audio_context_for_timestamp(timestamp, transcript)
         
-        # Log: Pata chale ke audio mili ya nahi
-        status_icon = "✅ Audio Found" if audio_text else "🔇 Silent Moment"
-        print(f"   -> Analyzing Frame at {timestamp}s | {status_icon}")
+        # --- LOGGING ADDED: USER KO DIKHAO KYA HO RAHA HAI ---
+        print(f"   -> Processing Frame {i+1}/{total_frames} at {timestamp}s | Audio: {'✅' if audio_text else '🔇'}")
+        # -----------------------------------------------------
 
-        # 4. Prompt Logic (Dynamic)
-        if audio_text:
-            # --- SCENARIO A: Audio Hai (Combine Karo) ---
-            prompt = f"""
-            You are a Lead Technical Writer.
-            INPUT:
-            - **Audio Intent:** "{audio_text}"
-            - **Visual:** UI Screenshot.
-            
-            TASK: Create a professional documentation step.
-            GUIDELINES:
-            1. **Title:** Action Verb + Object (e.g. "Save Configuration").
-            2. **Description:** Combine the 'Why' (Audio) with the 'How' (Visual).
-               - Format: [Action] + [**UI Element**] + [Location] + [Reason].
-            3. **Filler Check:** If audio is "Umm", "So...", ignore audio and describe visual action only.
-            
-            Return JSON ONLY: {{ "title": "...", "description": "..." }}
-            """
-        else:
-            # --- SCENARIO B: Audio Nahi Hai (Visual Only) ---
-            prompt = """
-            You are a Lead Technical Writer.
-            INPUT: UI Screenshot only (User is silent).
-            
-            TASK: Identify user action from visual cues.
-            GUIDELINES:
-            1. **Title:** Action Verb + Object.
-            2. **Description:** Describe the action + **UI Element** + Location.
-            3. **Static Check:** If no action is visible, return null.
-            
-            Return JSON ONLY: { "title": "...", "description": "..." }
-            """
+        # The Sanitized Prompt
+        prompt = f"""
+        You are a Senior Technical Writer creating a User Manual (SOP).
+        
+        INPUT CONTEXT:
+        - **Visual:** Screenshot of the UI at {timestamp} seconds.
+        - **Audio Context:** "{audio_text if audio_text else 'NO AUDIO'}"
+
+        CRITICAL FILTERING RULES:
+        1. **IGNORE CASUAL TALK:** If audio contains "parents loved it", "cool", "neat", IGNORE the audio and focus ONLY on the Visual Action.
+        2. **VISUAL PRIORITY:** If the screen shows a clear action (clicking/typing), document it even if audio is silent.
+        3. **STATIC CHECK:** If the screen is idle/static with no interaction, return {{ "title": "skip", "description": "skip" }}
+
+        WRITING STANDARDS:
+        - **Title:** Imperative Verb + Object (e.g., "Edit Customer Details").
+        - **Description:** [Action] + [**UI Element**] + [Location]. 
+          *Example:* "Click the **Edit** button in the top-right header."
+
+        Return JSON ONLY: {{ "title": "...", "description": "..." }}
+        """
 
         try:
             uploaded_file = genai.upload_file(frame_path)
@@ -213,41 +132,37 @@ def _generate_with_audio(transcript, frames_dir, interval):
             
             step_data = json.loads(cleaned_text)
             
-            # Skip logic
+            # --- FILTERING ---
             if not step_data or str(step_data.get("title")).lower() == "skip":
+                # print("      (Skipping: Static or Irrelevant)") # Optional verbose log
                 continue
 
-            # --- DEDUPLICATION ---
+            # Deduplication
             if generated_steps:
                 last_step = generated_steps[-1]
                 if last_step['title'] == step_data.get("title"):
-                    continue
+                    if last_step['description'][:15] == step_data.get("description")[:15]:
+                        continue
 
+            # Add Step
             generated_steps.append({
                 "step_number": len(generated_steps) + 1,
                 "timestamp": timestamp,
                 "image_path": frame_path,
                 "title": step_data.get("title", "Step"),
-                "description": step_data.get("description", audio_text or "Action performed.")
+                "description": step_data.get("description", "Perform action.")
             })
-            time.sleep(0.5) 
+            
+            # Show Success Log
+            print(f"      ✅ Generated: {step_data.get('title')}")
+            
+            time.sleep(1) # Safety delay
+
         except Exception as e:
             # print(f"❌ Step Error: {e}")
             pass
             
     return generated_steps
-
-# --- MAIN CONTROLLER (Darwaza) ---
-def generate_documentation_steps(transcript: list, frames_dir: str, interval: int = 2):
-    
-    # 1. Agar Transcript bilkul khali hai (Matlab video silent thi) -> Rasta 1
-    if not transcript or len(transcript) == 0:
-        print("⚠️ No Transcript found. Switching to Silent/Visual Mode.")
-        return _generate_visual_only(frames_dir, interval)
-    
-    # 2. Agar Transcript hai (Matlab video mein audio hai) -> Rasta 2 (Hybrid)
-    return _generate_with_audio(transcript, frames_dir, interval)
-
 
 # import os
 # import json

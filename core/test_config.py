@@ -3,5 +3,9 @@ from config import Settings
 
 settings = Settings()
 
-redis_url = settings.REDIS_URL
-print(f"Redis URL: {redis_url}")
+google_url = settings.GOOGLE_API_KEY
+print(f"Redis URL: {google_url}")
+
+openrouter_api_key_check = settings.OPENROUTER_API_KEY
+print(f"OpenRouter API Key: {openrouter_api_key_check}")
+

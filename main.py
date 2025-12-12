@@ -1,24 +1,21 @@
 from fastapi import FastAPI
-from core.config import settings
-from db.session import engine, Base
-import models 
+from routes import video
+from db.session import engine
+from models import video as video_model
+from core.logger import setup_logging  # <--- NEW IMPORT
 
-# Humara naya simple route import
-from routes import video 
+# 1. Setup Logging (First)
+logger = setup_logging()
+logger.info("🚀 System Startup: Logger Initialized Successfully!")
 
-# Tables check/create
-Base.metadata.create_all(bind=engine)
+# Create Tables
+video_model.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title=settings.PROJECT_NAME)
+app = FastAPI(title="VideoDocs AI")
 
-# --- Routes Register Karna ---
-# Yahan hum prefix laga rahe hain, taake URL banay: /api/v1/videos
-app.include_router(video.router, prefix="/api/v1/videos", tags=["Videos"])
+app.include_router(video.router, prefix="/api/v1/videos", tags=["videos"])
 
 @app.get("/")
-def health_check():
-    return {"status": "Welcome to VideoDocs AI"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
+def read_root():
+    logger.info("Health check endpoint accessed.")
+    return {"message": "VideoDocs AI Backend is Running!"}
