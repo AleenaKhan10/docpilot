@@ -4,6 +4,7 @@ sqlalchemy
 psycopg2-binary
 python-dotenv
 python-multipart
+celery
 celery[redis]
 redis
 eventlet
@@ -16,3 +17,10 @@ Pillow
 numpy
 faster-whisper
 tenacity
+python-magic  
+slowapi
+passlib[bcrypt]
+python-jose[cryptography]
+
+
+

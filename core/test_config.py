@@ -1,11 +1,9 @@
-import os
-from config import Settings
+from config import settings
 
-settings = Settings()
+NVIDIA_API_KEY = settings.NVIDIA_API_KEY
 
-google_url = settings.GOOGLE_API_KEY
-print(f"Redis URL: {google_url}")
+print("NVIDIA_API_KEY: ", NVIDIA_API_KEY)
 
-openrouter_api_key_check = settings.OPENROUTER_API_KEY
-print(f"OpenRouter API Key: {openrouter_api_key_check}")
+MODEL_NAME = settings.MODEL_NAME
 
+print("MODEL_NAME: ", MODEL_NAME)

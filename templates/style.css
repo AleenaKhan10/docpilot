@@ -1,0 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@page {
+    size: A4;
+    margin: 2cm;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    color: #1f2937;
+    line-height: 1.5;
+}
+
+/* Header */
+.doc-header { margin-bottom: 40px; }
+.doc-meta { font-size: 0.85rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+.doc-title { font-size: 2.5rem; font-weight: 700; margin: 0 0 15px 0; color: #111827; }
+.doc-intro { font-size: 1.1rem; color: #4b5563; border-left: 4px solid #e5e7eb; padding-left: 15px; }
+
+/* Sections */
+.section-wrapper { margin-bottom: 30px; }
+.section-heading { font-size: 1.5rem; font-weight: 600; color: #111827; margin-bottom: 20px; border-bottom: 1px solid #e5e7eb; padding-bottom: 10px; }
+
+/* Steps */
+.step-container { margin-bottom: 20px; page-break-inside: avoid; }
+.step-row { display: flex; align-items: flex-start; }
+
+.step-badge {
+    background-color: #1f2937; /* Dark badge like Twitter */
+    color: white;
+    min-width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: bold;
+    margin-right: 15px;
+    margin-top: 2px;
+}
+
+.step-content { flex: 1; }
+.step-text { font-size: 1rem; color: #374151; margin-bottom: 8px; }
+
+/* Tips (Shopify Style Green Box) */
+.tip-box {
+    background-color: #ecfdf5; /* Light Green */
+    border: 1px solid #a7f3d0;
+    border-left: 4px solid #10b981; /* Strong Green Left Border */
+    padding: 12px;
+    border-radius: 4px;
+    margin: 10px 0;
+    font-size: 0.95rem;
+    color: #065f46;
+}
+.tip-icon { margin-right: 8px; }
+
+.step-time { font-size: 0.8rem; color: #9ca3af; margin-top: 5px; text-align: right; }
+.section-divider { border: 0; border-top: 1px dashed #e5e7eb; margin: 40px 0; }
+.footer { text-align: center; font-size: 0.8rem; color: #d1d5db; margin-top: 50px; }

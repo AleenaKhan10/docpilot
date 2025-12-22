@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Text, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Float, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from db.session import Base
 
 class Step(Base):
@@ -7,20 +8,24 @@ class Step(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     
-    # Kaunsi video ka step hai?
-    video_id = Column(Integer, ForeignKey("videos.id"))
+    # Foreign Key matches Video.id (Integer)
+    video_id = Column(Integer, ForeignKey("videos.id"), index=True)
     
-    # Step Number (1, 2, 3...)
+    # --- Content ---
     step_number = Column(Integer, nullable=False)
-    
-    # Video mein kis time par ye step aaya (e.g., 05.4 seconds)
     timestamp = Column(Float, nullable=True)
     
-    # AI ka likha hua text
-    description = Column(Text, nullable=False)
+    title = Column(String, nullable=True)       # Section Header
+    description = Column(Text, nullable=False)  # Action Text
     
-    # Screenshot ka S3 Link
-    image_url = Column(String, nullable=True)
+    # --- Enterprise Metadata ---
+    tip = Column(Text, nullable=True)           # Pro Tip
+    url = Column(String, nullable=True)         # Extracted URL
+    image_url = Column(String, nullable=True)   # S3 Link / Local Link
+    
+    # --- Audit ---
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relationship
     video = relationship("Video", back_populates="steps")
