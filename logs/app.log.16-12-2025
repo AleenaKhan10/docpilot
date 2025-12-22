@@ -1,0 +1,89 @@
+[16-12-2025 00:17:16] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:17:27] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:17:38] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:17:49] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:17:59] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:18:53] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:19:04] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:19:15] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:19:25] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:19:37] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:19:47] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:19:56] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:21:31] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:21:41] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:23:00] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:23:11] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:23:22] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:23:33] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:23:44] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:23:54] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:24:23] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:24:33] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:26:58] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:27:08] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:27:19] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:27:29] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:27:39] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:30:31] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 00:31:20] [INFO] [uvicorn.access]: 127.0.0.1:60329 - "GET /docs HTTP/1.1" 200
+[16-12-2025 00:31:20] [INFO] [uvicorn.access]: 127.0.0.1:60329 - "GET /openapi.json HTTP/1.1" 200
+[16-12-2025 00:32:03] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[16-12-2025 00:32:03] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[16-12-2025 00:32:06] [INFO] [uvicorn.access]: 127.0.0.1:60330 - "POST /api/v1/videos/ HTTP/1.1" 200
+[16-12-2025 00:35:06] [INFO] [uvicorn.access]: 127.0.0.1:63188 - "POST /api/v1/videos/ HTTP/1.1" 200
+[16-12-2025 18:41:43] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 18:45:37] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 18:45:40] [INFO] [uvicorn.access]: 127.0.0.1:53792 - "GET /docs HTTP/1.1" 200
+[16-12-2025 18:45:41] [INFO] [uvicorn.access]: 127.0.0.1:53792 - "GET /openapi.json HTTP/1.1" 200
+[16-12-2025 20:23:42] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 20:23:56] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 20:24:01] [INFO] [uvicorn.access]: 127.0.0.1:49407 - "GET /docs HTTP/1.1" 200
+[16-12-2025 20:24:01] [INFO] [uvicorn.access]: 127.0.0.1:49407 - "GET /openapi.json HTTP/1.1" 200
+[16-12-2025 22:46:01] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 22:46:06] [INFO] [core.lifespan]: 🔄 System Startup: Checking for interrupted tasks...
+[16-12-2025 22:46:06] [WARNING] [core.lifespan]: ⚠️ Found 5 interrupted (zombie) tasks. Marking them as Failed.
+[16-12-2025 22:46:07] [INFO] [core.lifespan]: ✅ Cleanup Complete: Zombies eliminated.
+[16-12-2025 22:46:23] [INFO] [uvicorn.access]: 127.0.0.1:51407 - "GET /docs HTTP/1.1" 200
+[16-12-2025 22:46:23] [INFO] [uvicorn.access]: 127.0.0.1:51407 - "GET /openapi.json HTTP/1.1" 200
+[16-12-2025 22:47:07] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[16-12-2025 22:47:07] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[16-12-2025 22:47:10] [INFO] [uvicorn.access]: 127.0.0.1:51408 - "POST /api/v1/videos/ HTTP/1.1" 200
+[16-12-2025 22:56:42] [INFO] [core.lifespan]: 🛑 System Shutdown: Closing connections...
+[16-12-2025 22:57:46] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 22:57:49] [INFO] [core.lifespan]: 🔄 System Startup: Checking for interrupted tasks...
+[16-12-2025 22:57:50] [INFO] [core.lifespan]: ✅ System Clean: No interrupted tasks found.
+[16-12-2025 22:57:59] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 22:58:03] [INFO] [core.lifespan]: 🔄 System Startup: Checking for interrupted tasks...
+[16-12-2025 22:58:03] [INFO] [core.lifespan]: ✅ System Clean: No interrupted tasks found.
+[16-12-2025 22:58:13] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 22:58:17] [INFO] [core.lifespan]: 🔄 System Startup: Checking for interrupted tasks...
+[16-12-2025 22:58:17] [INFO] [core.lifespan]: ✅ System Clean: No interrupted tasks found.
+[16-12-2025 22:59:19] [INFO] [uvicorn.access]: 127.0.0.1:60659 - "GET /docs HTTP/1.1" 200
+[16-12-2025 22:59:19] [INFO] [uvicorn.access]: 127.0.0.1:60659 - "GET /openapi.json HTTP/1.1" 200
+[16-12-2025 22:59:40] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[16-12-2025 22:59:40] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[16-12-2025 22:59:51] [INFO] [uvicorn.access]: 127.0.0.1:60660 - "POST /api/v1/videos/ HTTP/1.1" 200
+[16-12-2025 23:04:04] [INFO] [core.lifespan]: 🛑 System Shutdown: Closing connections...
+[16-12-2025 23:04:15] [INFO] [root]: 🚀 System Startup: Logger Initialized Successfully!
+[16-12-2025 23:04:19] [INFO] [core.lifespan]: 🔄 System Startup: Checking for interrupted tasks...
+[16-12-2025 23:04:19] [INFO] [core.lifespan]: ✅ System Clean: No interrupted tasks found.
+[16-12-2025 23:07:01] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[16-12-2025 23:07:01] [WARNING] [celery.backends.redis]: 
+Setting ssl_cert_reqs=CERT_NONE when connecting to redis means that celery will not validate the identity of the redis broker when connecting. This leaves you vulnerable to man in the middle attacks.
+
+[16-12-2025 23:07:11] [INFO] [uvicorn.access]: 127.0.0.1:50604 - "POST /api/v1/videos/ HTTP/1.1" 200

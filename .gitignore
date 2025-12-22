@@ -6,4 +6,13 @@ final_output
 test_video_2.mp4
 test_video_3.mp4
 test_video_4.mp4
+test_video_5.mp4
+test_video_6.mp4
+test_video_7.mp4
+test_video_4.mp4
+test_ws
 __pycache__
+celerybeat-schedule.bak
+celerybeat-schedule.dat
+celerybeat-schedule.dir
+manual2.

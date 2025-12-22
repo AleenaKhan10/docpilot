@@ -3,20 +3,20 @@ import time
 from faster_whisper import WhisperModel
 
 # --- CONFIGURATION ---
-# Base Model is best for production (Speed vs Accuracy)
-# If need too fast then 'tiny', if need too accurate then 'small'
+# 'base' model production ke liye best balance hai (Speed vs Accuracy).
 # Agar bohot fast chahiye to 'tiny', agar bohot accurate chahiye to 'small' use karo.
 MODEL_SIZE = "base"
 
-
+# Device: 'cpu' (Agar Nvidia GPU hai to 'cuda' likho)
+# Compute Type: 'int8' CPU ke liye best hai. GPU ke liye 'float16'.
 DEVICE = "cpu"
 COMPUTE_TYPE = "int8"
 
 print(f"⏳ Loading Faster-Whisper model ({MODEL_SIZE})...")
 
 try:
-    # Loads model into the memory (Global Instance)
-    # It downloads the model on first run
+    # Model ko memory mein load karke rakhenge (Global Instance)
+    # Yeh pehli baar run honay par model download karega.
     model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
     print("✅ Faster-Whisper model loaded successfully!")
 except Exception as e:
@@ -39,7 +39,7 @@ def transcribe_audio_local(audio_path: str):
     start_time = time.time()
     
     try:
-        # Beam Size 5 = Behtar Accuracy (multiple paths explore)
+        # Beam Size 5 = Behtar Accuracy (multiple paths explore karta hai)
         segments, info = model.transcribe(audio_path, beam_size=5)
         
         transcript_data = []

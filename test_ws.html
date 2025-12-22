@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <h1>Video Progress</h1>
+    <div id="status">Waiting...</div>
+    <div id="progress">0%</div>
+
+    <script>
+        // Video ID that needs to be processed
+        const videoId = 92; 
+        const ws = new WebSocket(`ws://localhost:8000/ws/${videoId}`);
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            console.log("Update received:", data);
+            
+            document.getElementById("status").innerText = "Status: " + data.status + " | " + data.message;
+            document.getElementById("progress").innerText = "Progress: " + data.progress + "%";
+        };
+    </script>
+</body>
+</html>
