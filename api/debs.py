@@ -7,12 +7,11 @@ from db.session import get_db
 from models.user import User
 import uuid
 
-# Change 1: Use HTTPBearer instead of OAuth2PasswordBearer
-# It will show simple token box in Swagger
+
 security = HTTPBearer()
 
 def get_current_user(
-    token_obj: HTTPAuthorizationCredentials = Depends(security), # <--- CHANGED
+    token_obj: HTTPAuthorizationCredentials = Depends(security), 
     db: Session = Depends(get_db)
 ) -> User:
     """

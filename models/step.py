@@ -23,6 +23,11 @@ class Step(Base):
     url = Column(String, nullable=True)         # Extracted URL
     image_url = Column(String, nullable=True)   # S3 Link / Local Link
     
+    # --- Professional Documentation Fields ---
+    explanation = Column(Text, nullable=True)      # Why this step matters / what it does
+    note = Column(Text, nullable=True)             # Important warning or note (callout box)
+    section_summary = Column(Text, nullable=True)  # Intro paragraph for the section
+    
     # --- Audit ---
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

@@ -78,8 +78,15 @@ def process_video_task(self, video_id: int, video_path: str):
                 video_id=video_id,
                 step_number=step_data['step_number'],
                 timestamp=step_data['timestamp'],
+                title=step_data.get('title', 'General'),
                 description=step_data['description'],
-                image_url=step_data['image_path']
+                tip=step_data.get('tip'),
+                url=step_data.get('url'),
+                image_url=step_data.get('image_path'),
+                # --- Professional Documentation Fields ---
+                explanation=step_data.get('explanation'),
+                note=step_data.get('note'),
+                section_summary=step_data.get('section_summary'),
             )
             db.add(new_step)
         
@@ -95,11 +102,14 @@ def process_video_task(self, video_id: int, video_path: str):
                 def __init__(self, data):
                     self.step_number = data.get('step_number')
                     self.timestamp = data.get('timestamp')
-                    self.description = data.get('description') # Yeh Action hai
-                    self.title = data.get('title', 'General')  # Yeh Section Name hai
-                    self.tip = data.get('tip', None)           # Yeh Pro Tip hai
-                    self.url = data.get('url', None) # <--- Carry URL to PDF Service
-                    # self.image_url = data.get('image_path') # Image ki ab zaroorat nahi PDF mein
+                    self.description = data.get('description')
+                    self.title = data.get('title', 'General')
+                    self.tip = data.get('tip', None)
+                    self.url = data.get('url', None)
+                    # --- Professional Documentation Fields ---
+                    self.explanation = data.get('explanation', None)
+                    self.note = data.get('note', None)
+                    self.section_summary = data.get('section_summary', None)
                     
             # Convert dict list to object list
             step_objects = [StepMock(s) for s in final_steps]

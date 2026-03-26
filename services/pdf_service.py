@@ -11,9 +11,9 @@ TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 
 def generate_pdf_report(video_obj, steps, output_path):
     """
-    Generates a professional PDF report.
+    Generates a professional Help Center style PDF report.
     - Groups steps by Section (Title).
-    - prepares 'data' object for the template.
+    - Includes section summaries, explanations, tips, notes, and URLs.
     """
     
     # 1. Setup Jinja2
@@ -24,23 +24,20 @@ def generate_pdf_report(video_obj, steps, output_path):
     css_file_path = os.path.join(TEMPLATE_DIR, "style.css")
     css_obj = CSS(filename=css_file_path)
 
-    # 3. Grouping Logic (The Magic Step)
-    # Hum steps ko unke 'title' (Section Name) ke hisaab se group karenge
-    # Note: Steps must be sorted by ID/Number first, but grouping requires sorting by key
-    # Lekin hum linear grouping chahte hain. Let's do a simple loop grouping.
-    
+    # 3. Professional Section Grouping
     sections = []
     current_section = None
     
     for step in steps:
-        # Step object se data nikalo
-        # Note: tasks.py mein StepMock use ho raha hai, usmein attributes honge
-        step_title = getattr(step, "title", "General Steps") # Yeh Section Name hai
+        step_title = getattr(step, "title", "General Steps")
         step_desc = getattr(step, "description", "")
         step_time = getattr(step, "timestamp", "")
         step_num = getattr(step, "step_number", 0)
-        step_tip = getattr(step, "tip", None) # Tip uthao
-        step_url = getattr(step, "url", None) # <--- Get URL
+        step_tip = getattr(step, "tip", None)
+        step_url = getattr(step, "url", None)
+        step_explanation = getattr(step, "explanation", None)
+        step_note = getattr(step, "note", None)
+        step_section_summary = getattr(step, "section_summary", None)
 
         # Format Step
         step_dict = {
@@ -48,36 +45,48 @@ def generate_pdf_report(video_obj, steps, output_path):
             "timestamp": step_time,
             "action": step_desc,
             "tip": step_tip,
-            "url": step_url # <--- Pass to Template
+            "url": step_url,
+            "explanation": step_explanation,
+            "note": step_note,
         }
 
         # Check if we need a new section
         if current_section is None or current_section["heading"] != step_title:
-            # Create new section
             current_section = {
                 "heading": step_title,
+                "summary": step_section_summary,  # Use section_summary from the first step
                 "steps": []
             }
             sections.append(current_section)
         
-        # Add step to current section
         current_section["steps"].append(step_dict)
 
-    # 4. Prepare Context for HTML
-    # HTML expects 'data' variable
+    # 4. Generate document summary
+    section_names = [s["heading"] for s in sections]
+    if len(section_names) > 1:
+        doc_summary = f"This guide walks you through {len(section_names)} key sections: {', '.join(section_names[:-1])}, and {section_names[-1]}. Follow each section in order for the best results."
+    elif len(section_names) == 1:
+        doc_summary = f"This guide covers {section_names[0]}. Follow the steps below in order."
+    else:
+        doc_summary = "Follow the steps below to complete this task."
+
+    # 5. Prepare Context for HTML
+    total_steps = sum(len(s["steps"]) for s in sections)
     context = {
         "data": {
-            "title": video_obj.title,
-            "summary": f"Automated guide created on {datetime.now().strftime('%B %d, %Y')}. Follow the steps below.",
-            "sections": sections
+            "title": video_obj.title or "Documentation Guide",
+            "summary": doc_summary,
+            "generated_date": datetime.now().strftime("%B %d, %Y"),
+            "total_sections": len(sections),
+            "total_steps": total_steps,
+            "sections": sections,
         },
-        "css_path": "" # Not used but good to keep safe
     }
     
-    # 5. Render HTML
+    # 6. Render HTML
     html_content = template.render(context)
     
-    # 6. Generate PDF
+    # 7. Generate PDF
     print(f"🎨 Generating PDF at: {output_path}")
     HTML(string=html_content, base_url=BASE_DIR).write_pdf(
         output_path, 
