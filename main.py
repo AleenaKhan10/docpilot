@@ -1,6 +1,6 @@
 # Imports
 from fastapi import FastAPI
-from routes import video
+from routes import video, org
 from db.session import engine
 from models import video as video_model
 from core.logger import setup_logging  # To setup logger, we need to import it
@@ -18,7 +18,8 @@ logger = setup_logging()
 logger.info("🚀 System Startup: Logger Initialized Successfully!")
 
 # Create Tables
-video_model.Base.metadata.create_all(bind=engine)
+from models import Base
+Base.metadata.create_all(bind=engine)
 
 # FastAPI App and Name
 app = FastAPI(title="VideoDocs AI", lifespan=lifespan)
@@ -34,7 +35,8 @@ app.mount("/downloads", StaticFiles(directory="temp_data"), name="downloads")
 
 # Registered Routes
 app.include_router(video.router, prefix="/api/v1/videos", tags=["videos"])
-app.include_router(websocket_router.router, tags=["websockets"]) 
+app.include_router(org.router, prefix="/api/v1/org", tags=["organization"]) # MULTI-TENANCY ROUTES
+app.include_router(websocket_router.router, tags=["websockets"])
 
 # CORS Configuration
 origins = [

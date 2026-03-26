@@ -2,6 +2,8 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime
 
+import uuid
+
 # 1. Base Schema (Common data)
 class UserBase(BaseModel):
     email: EmailStr
@@ -21,7 +23,8 @@ class UserLogin(BaseModel):
 # 4. RESPONSE Schema (What we will send to Frontend)
 # CRITICAL: This should never have password Field!
 class UserResponse(UserBase):
-    id: int
+    id: uuid.UUID
+    org_id: Optional[uuid.UUID]
     is_superuser: bool
     role: str
     created_at: datetime

@@ -57,3 +57,34 @@ def get_current_user(
         raise HTTPException(status_code=404, detail="User not found (Sync Issue)")
         
     return user
+
+
+# --- MULTI-TENANCY GUARDS ---
+
+def require_org(current_user: User = Depends(get_current_user)) -> User:
+    """
+    Guard: Ensures the user belongs to an organization.
+    Use this for routes that require org context (like uploading a video).
+    """
+    if not current_user.org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="You must belong to an organization to perform this action."
+        )
+    return current_user
+
+class RequireRole:
+    """
+    Dependency factory for RBAC (Role-Based Access Control).
+    Usage: Depends(RequireRole(["owner", "admin"]))
+    """
+    def __init__(self, allowed_roles: list[str]):
+        self.allowed_roles = allowed_roles
+
+    def __call__(self, current_user: User = Depends(require_org)) -> User:
+        if current_user.role not in self.allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied. Requires one of: {', '.join(self.allowed_roles)}."
+            )
+        return current_user

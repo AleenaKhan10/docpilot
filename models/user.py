@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, String, DateTime
+from sqlalchemy import Boolean, Column, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import UUID  # SPECIAL IMPORT FOR SUPABASE
@@ -18,14 +18,18 @@ class User(Base):
     
     # 2. PASSWORD REMOVED (Supabase handles security) ❌
     
+    # --- Multi-Tenancy ---
+    org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True, index=True)
+    
     # --- Enterprise Access Control ---
     is_active = Column(Boolean, default=True) 
-    is_superuser = Column(Boolean, default=False) 
-    role = Column(String, default="user") # user, admin, manager
+    is_superuser = Column(Boolean, default=False)  # Platform admin (developer)
+    role = Column(String, default="member")        # Org role: owner, admin, member, viewer
     
     # --- Audit Fields ---
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # --- Relationships ---
+    organization = relationship("Organization", back_populates="members")
     videos = relationship("Video", back_populates="owner", cascade="all, delete-orphan")
