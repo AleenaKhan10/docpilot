@@ -17,6 +17,8 @@ class Settings:
 
     ALGORITHM: str = "HS256" # Standard JWT algorithm
     SUPABASE_JWT_SECRET: str = os.getenv("SUPABASE_JWT_SECRET", "")
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL")
+    SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY")
     
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30 # Standard session time (Bank apps use 5-15 mins)
     
