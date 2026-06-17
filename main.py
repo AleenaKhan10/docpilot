@@ -38,13 +38,21 @@ app.include_router(video.router, prefix="/api/v1/videos", tags=["videos"])
 app.include_router(share.router, prefix="/api/v1", tags=["share"])
 app.include_router(websocket_router.router, tags=["websockets"])
 
-# TODO: drive this from settings.ALLOWED_ORIGINS for prod.
-origins = [
+# Allowed origins: localhost for dev, plus anything in ALLOWED_ORIGINS env
+# var (comma-separated). The frontend must match one of these for cookies
+# / Authorization headers to work cross-origin.
+_default_origins = [
     "http://localhost:3000",
     "http://localhost:5173",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
 ]
+_env_origins = [
+    o.strip()
+    for o in os.getenv("ALLOWED_ORIGINS", "").split(",")
+    if o.strip()
+]
+origins = _default_origins + _env_origins
 
 app.add_middleware(
     CORSMiddleware,
