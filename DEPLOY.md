@@ -82,7 +82,7 @@ Go to Cloudflare Dashboard → your domain → **DNS** → **Records**. Add:
 DNS propagation: usually <5 min, max 1 hour. Test:
 
 ```bash
-dig api.yourdomain.com   # should return your VPS IP
+dig api.usedocpilot.com   # should return your VPS IP
 ```
 
 ---
@@ -118,10 +118,10 @@ su - docpilot
 cd ~/docpilot
 ```
 
-Customise the nginx config — replace `api.yourdomain.com` with your real subdomain:
+Customise the nginx config — point it at `api.usedocpilot.com`:
 
 ```bash
-sudo sed -i 's/api\.yourdomain\.com/api.YOUR-REAL-DOMAIN/g' /etc/nginx/sites-available/docpilot
+sudo sed -i 's/api\.yourdomain\.com/api.usedocpilot.com/g' /etc/nginx/sites-available/docpilot
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
@@ -137,7 +137,7 @@ Required values (copy from your dev `.env` if you don't have a fresh prod projec
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`
 - `DATABASE_URL` — Supabase **session pooler** URL, password URL-encoded
 - `GEMINI_API_KEY`
-- `APP_BASE_URL=https://app.yourdomain.com`
+- `APP_BASE_URL=https://app.usedocpilot.com`
 - `RESEND_API_KEY` (optional until you have a verified domain)
 
 Bring the stack up:
@@ -168,7 +168,7 @@ curl http://127.0.0.1:8000/
 ## 6. HTTPS via Let's Encrypt
 
 ```bash
-sudo certbot --nginx -d api.YOUR-DOMAIN
+sudo certbot --nginx -d api.usedocpilot.com
 ```
 
 Certbot will:
@@ -180,7 +180,7 @@ Certbot will:
 Test:
 
 ```bash
-curl https://api.YOUR-DOMAIN/
+curl https://api.usedocpilot.com/
 # should print {"service":"docpilot-api","status":"ok"} over HTTPS
 ```
 
@@ -199,19 +199,19 @@ If you flip the Cloudflare proxy back to **Proxied** (orange cloud) after this, 
 4. Click **Environment Variables**, add:
    - `VITE_SUPABASE_URL` = same as backend
    - `VITE_SUPABASE_ANON_KEY` = same as backend
-   - `VITE_API_BASE_URL` = `https://api.YOUR-DOMAIN`
-   - `VITE_WS_BASE_URL` = `wss://api.YOUR-DOMAIN` (note `wss` not `https`)
+   - `VITE_API_BASE_URL` = `https://api.usedocpilot.com`
+   - `VITE_WS_BASE_URL` = `wss://api.usedocpilot.com` (note `wss` not `https`)
 5. **Deploy**. Wait ~2 min for the first build
-6. Once deployed, click **Settings** → **Domains** → add `app.YOUR-DOMAIN` and `YOUR-DOMAIN` (root). Vercel verifies DNS instantly (we added the CNAMEs in step 3)
+6. Once deployed, click **Settings** → **Domains** → add `app.usedocpilot.com` and `usedocpilot.com` (root). Vercel verifies DNS instantly (we added the CNAMEs in step 3)
 7. Vercel issues SSL certs automatically
 
-The frontend is now live at `https://app.YOUR-DOMAIN` and `https://YOUR-DOMAIN`.
+The frontend is now live at `https://app.usedocpilot.com` and `https://usedocpilot.com`.
 
 ---
 
 ## 8. Verify
 
-1. Open `https://app.YOUR-DOMAIN/login` → sign up flow works
+1. Open `https://app.usedocpilot.com/login` → sign up flow works
 2. Upload a tiny video → watch the live progress timeline
 3. Open the generated doc → share link → open in incognito → no auth required
 4. Check `docker compose logs -f --tail=200` on the VPS during processing — you should see Pass 1 / Pass 2 / PDF / Storage upload events
