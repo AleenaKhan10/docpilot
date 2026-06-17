@@ -18,6 +18,13 @@
 
 set -euo pipefail
 
+# Non-interactive everything — this script gets piped to `bash` over SSH,
+# so there's no TTY and any prompt will hang forever.
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+export NEEDRESTART_SUSPEND=1
+APT_OPTS=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
+
 DEPLOY_USER="docpilot"
 APP_DIR="/home/${DEPLOY_USER}/docpilot"
 REPO_URL="https://github.com/AleenaKhan10/docpilot.git"
@@ -32,17 +39,23 @@ fi
 
 log "Updating apt"
 apt-get update
-apt-get -y upgrade
+apt-get -y "${APT_OPTS[@]}" upgrade
 
 log "Installing base packages"
-apt-get -y install \
+apt-get -y "${APT_OPTS[@]}" install \
   ca-certificates curl gnupg lsb-release \
   ufw fail2ban unattended-upgrades \
   nginx certbot python3-certbot-nginx \
   git htop tmux
 
 log "Enabling unattended security updates"
-dpkg-reconfigure -plow unattended-upgrades || true
+# Write the config directly instead of dpkg-reconfigure, which needs a TTY.
+cat > /etc/apt/apt.conf.d/20auto-upgrades <<'AUTOCFG'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
+AUTOCFG
+systemctl enable --now unattended-upgrades.service >/dev/null 2>&1 || true
 
 log "Firewall: allow SSH + HTTP + HTTPS"
 ufw allow OpenSSH
@@ -70,7 +83,7 @@ if ! command -v docker >/dev/null 2>&1; then
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${DOCKER_DISTRO} ${VERSION_CODENAME} stable" \
     > /etc/apt/sources.list.d/docker.list
   apt-get update
-  apt-get -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  apt-get -y "${APT_OPTS[@]}" install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
 
 usermod -aG docker "${DEPLOY_USER}"
