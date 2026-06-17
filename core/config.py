@@ -19,6 +19,8 @@ class Settings:
     SUPABASE_JWT_SECRET: str = os.getenv("SUPABASE_JWT_SECRET", "")
     SUPABASE_URL: str = os.getenv("SUPABASE_URL")
     SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY")
+    SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "http://localhost:5173")
     
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30 # Standard session time (Bank apps use 5-15 mins)
     
@@ -29,5 +31,14 @@ class Settings:
     OPENROUTER_MODEL: str = os.getenv("OPENROUTER_MODEL")
     NVIDIA_API_KEY: str = os.getenv("NVIDIA_API_KEY")
     MODEL_NAME : str = os.getenv("MODEL_NAME")
+
+    # Google Gemini (active VLM)
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+    # Upload limits (P0)
+    MAX_UPLOAD_BYTES: int = int(os.getenv("MAX_UPLOAD_BYTES", 500 * 1024 * 1024))  # 500 MB
+    MAX_VIDEO_DURATION_SECONDS: int = int(os.getenv("MAX_VIDEO_DURATION_SECONDS", 30 * 60))  # 30 min
+    MAX_VIDEOS_PER_ORG_PER_DAY: int = int(os.getenv("MAX_VIDEOS_PER_ORG_PER_DAY", 20))
 
 settings = Settings()

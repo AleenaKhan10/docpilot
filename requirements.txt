@@ -4,23 +4,23 @@ sqlalchemy
 psycopg2-binary
 python-dotenv
 python-multipart
+pydantic[email]
+
 celery
 celery[redis]
 redis
-eventlet
-google-generativeai
-boto3
+
 supabase
-requests
-openai
-Pillow
-numpy
-faster-whisper
-tenacity
-python-magic  
-slowapi
-passlib[bcrypt]
 python-jose[cryptography]
 
+google-generativeai
+faster-whisper
+Pillow
+numpy
+weasyprint
+jinja2
 
-
+requests
+tenacity
+python-magic
+slowapi

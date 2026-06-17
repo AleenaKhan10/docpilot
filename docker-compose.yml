@@ -1,0 +1,87 @@
+# DocPilot — production docker-compose for the Contabo VPS.
+#
+# Three services on one box:
+#   - api      : FastAPI, behind nginx (nginx runs on the host, not in compose)
+#   - worker   : Celery worker doing the video processing
+#   - redis    : Celery broker + WebSocket pub/sub
+#
+# Postgres + Storage stay on Supabase — we don't self-host those.
+#
+# Run with:
+#   docker compose pull && docker compose up -d --build
+#
+# Env vars come from /home/docpilot/docpilot/.env on the host.
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: docpilot-redis
+    restart: unless-stopped
+    # Bind only to the docker network — not exposed to the public internet.
+    expose:
+      - "6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: docpilot-backend:latest
+    container_name: docpilot-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    # nginx on the host proxies https://api.yourdomain.com → 127.0.0.1:8000
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Survive container rebuild for the locally-cached Whisper model.
+      - whisper-cache:/home/docpilot/.cache
+      # Local fallback artefacts before they land in Supabase Storage
+      - temp-data:/app/temp_data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    image: docpilot-backend:latest
+    container_name: docpilot-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    command:
+      - celery
+      - -A
+      - core.celery_app
+      - worker
+      - --pool=prefork
+      - --concurrency=2
+      - --loglevel=info
+    volumes:
+      - whisper-cache:/home/docpilot/.cache
+      - temp-data:/app/temp_data
+
+volumes:
+  redis-data:
+  whisper-cache:
+  temp-data:

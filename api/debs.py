@@ -1,90 +1,211 @@
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials # For Bearer Token
+import uuid
+import time
+import threading
+from typing import Optional
+import requests
+from fastapi import Depends, Header, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
+
 from sqlalchemy.orm import Session
+
 from core.config import settings
+from core.logger import setup_logging
 from db.session import get_db
 from models.user import User
-import uuid
+from models.organization import Organization
+from models.membership import Membership
 
-
+logger = setup_logging()
 security = HTTPBearer()
 
-def get_current_user(
-    token_obj: HTTPAuthorizationCredentials = Depends(security), 
-    db: Session = Depends(get_db)
-) -> User:
-    """
-    Supabase Auth Guard with Simple Bearer Token Support.
-    """
-    
-    # Extract token string from the object
-    token = token_obj.credentials 
-    
-    credentials_exception = HTTPException(
+
+# --- Supabase JWKS cache (for asymmetric ES256/RS256 token verification) ---
+_jwks_cache: dict = {"data": None, "fetched_at": 0.0}
+_jwks_lock = threading.Lock()
+_JWKS_TTL_SECONDS = 3600
+
+
+def _fetch_jwks() -> dict:
+    """Fetch (and cache) the project's public JWKS used to verify asymmetric JWTs."""
+    with _jwks_lock:
+        now = time.time()
+        if _jwks_cache["data"] is not None and now - _jwks_cache["fetched_at"] < _JWKS_TTL_SECONDS:
+            return _jwks_cache["data"]
+        if not settings.SUPABASE_URL:
+            raise RuntimeError("SUPABASE_URL not configured.")
+        url = f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
+        resp = requests.get(url, timeout=5)
+        resp.raise_for_status()
+        _jwks_cache["data"] = resp.json()
+        _jwks_cache["fetched_at"] = now
+        return _jwks_cache["data"]
+
+
+def _decode_supabase_jwt(token: str) -> dict:
+    """Verify a Supabase JWT regardless of signing scheme (HS256 legacy or ES256/RS256)."""
+    header = jwt.get_unverified_header(token)
+    alg = header.get("alg", "HS256")
+    kid = header.get("kid")
+
+    if alg == "HS256":
+        if not settings.SUPABASE_JWT_SECRET:
+            raise RuntimeError("SUPABASE_JWT_SECRET not configured for HS256 verification.")
+        return jwt.decode(
+            token,
+            settings.SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            options={"verify_aud": False},
+        )
+
+    # Asymmetric (ES256 / RS256 / EdDSA) — look up the public key in JWKS by kid.
+    jwks = _fetch_jwks()
+    key = None
+    for k in jwks.get("keys", []):
+        if k.get("kid") == kid:
+            key = k
+            break
+    if not key:
+        # Refresh once in case a new key was rotated in.
+        with _jwks_lock:
+            _jwks_cache["fetched_at"] = 0.0
+        jwks = _fetch_jwks()
+        for k in jwks.get("keys", []):
+            if k.get("kid") == kid:
+                key = k
+                break
+        if not key:
+            raise JWTError(f"No matching JWKS key for kid={kid}.")
+
+    return jwt.decode(
+        token,
+        key,
+        algorithms=[alg],
+        options={"verify_aud": False},
+    )
+
+
+def _credentials_exception(detail: str = "Could not validate credentials") -> HTTPException:
+    return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail=detail,
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
+
+def require_user(
+    token_obj: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+) -> User:
+    """Verify Supabase JWT (HS256 legacy or ES256/RS256 asymmetric) and return the local User row."""
     try:
-        # --- 1. VERIFY TOKEN SIGNATURE ---
-        payload = jwt.decode(
-            token, 
-            settings.SUPABASE_JWT_SECRET, 
-            algorithms=[settings.ALGORITHM],
-            options={"verify_aud": False}
-        )
-        
-        # --- 2. EXTRACT USER ID (UUID) ---
-        user_id: str = payload.get("sub")
-        
-        if user_id is None:
-            raise credentials_exception
-            
+        payload = _decode_supabase_jwt(token_obj.credentials)
+        user_id = payload.get("sub")
+        if not user_id:
+            raise _credentials_exception()
     except JWTError as e:
-        print(f"JWT Error: {e}")
-        raise credentials_exception
-    
-    # --- 3. FETCH USER FROM DB ---
+        logger.warning(f"JWT verification failed: {e}")
+        raise _credentials_exception()
+    except Exception as e:
+        logger.warning(f"JWT verification error: {e}")
+        raise _credentials_exception()
+
     try:
         user_uuid = uuid.UUID(user_id)
-        user = db.query(User).filter(User.id == user_uuid).first()
     except ValueError:
-        raise credentials_exception
-        
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found (Sync Issue)")
-        
+        raise _credentials_exception()
+
+    user = db.query(User).filter(User.id == user_uuid).first()
+    if not user:
+        # auth.users exists but public.users row is missing.
+        # Possible after a partial signup or manual auth.users insert.
+        raise HTTPException(status_code=404, detail="User profile not provisioned.")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="User is deactivated.")
     return user
 
 
-# --- MULTI-TENANCY GUARDS ---
+VALID_ROLES = ("owner", "admin", "editor", "viewer")
 
-def require_org(current_user: User = Depends(get_current_user)) -> User:
-    """
-    Guard: Ensures the user belongs to an organization.
-    Use this for routes that require org context (like uploading a video).
-    """
-    if not current_user.org_id:
+# Roles ordered low → high. Comparing index gives a "rank".
+_ROLE_RANK = {"viewer": 0, "editor": 1, "admin": 2, "owner": 3}
+
+
+def role_rank(role: str) -> int:
+    return _ROLE_RANK.get(role, -1)
+
+
+class OrgContext:
+    """Carries the active org membership for a request."""
+
+    def __init__(self, user: User, organization: Organization, membership: Membership):
+        self.user = user
+        self.organization = organization
+        self.membership = membership
+
+    @property
+    def role(self) -> str:
+        return self.membership.role
+
+    @property
+    def is_owner(self) -> bool:
+        return self.role == "owner"
+
+    @property
+    def is_admin_or_above(self) -> bool:
+        return self.role in ("owner", "admin")
+
+    @property
+    def can_upload(self) -> bool:
+        return self.role in ("owner", "admin", "editor")
+
+
+def require_org_member(
+    x_org_id: Optional[str] = Header(default=None, alias="X-Org-Id"),
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> OrgContext:
+    """Verify the caller has a membership in the org passed via X-Org-Id."""
+    if not x_org_id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
-            detail="You must belong to an organization to perform this action."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing X-Org-Id header.",
         )
-    return current_user
+    try:
+        org_uuid = uuid.UUID(x_org_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid X-Org-Id.")
+
+    membership = (
+        db.query(Membership)
+        .filter(Membership.user_id == user.id, Membership.org_id == org_uuid)
+        .first()
+    )
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of this organization.",
+        )
+
+    org = db.query(Organization).filter(Organization.id == org_uuid).first()
+    if not org or not org.is_active:
+        raise HTTPException(status_code=404, detail="Organization not found.")
+
+    return OrgContext(user=user, organization=org, membership=membership)
+
 
 class RequireRole:
-    """
-    Dependency factory for RBAC (Role-Based Access Control).
-    Usage: Depends(RequireRole(["owner", "admin"]))
-    """
+    """Dependency factory. Usage: Depends(RequireRole(['owner']))."""
+
     def __init__(self, allowed_roles: list[str]):
         self.allowed_roles = allowed_roles
 
-    def __call__(self, current_user: User = Depends(require_org)) -> User:
-        if current_user.role not in self.allowed_roles:
+    def __call__(
+        self, ctx: OrgContext = Depends(require_org_member)
+    ) -> OrgContext:
+        if ctx.role not in self.allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied. Requires one of: {', '.join(self.allowed_roles)}."
+                detail=f"Requires one of: {', '.join(self.allowed_roles)}",
             )
-        return current_user
+        return ctx

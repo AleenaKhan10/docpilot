@@ -1,168 +1,237 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
 from db.session import get_db
 from models.user import User
 from models.organization import Organization
-from models.invitation import Invitation
-from schemas.org import OrgCreate, OrgResponse, InviteRequest, InviteResponse, MemberResponse, ChangeRoleRequest
-from api.debs import get_current_user, require_org, RequireRole
+from models.membership import Membership
+from api.debs import (
+    require_user,
+    require_org_member,
+    RequireRole,
+    OrgContext,
+    VALID_ROLES,
+    role_rank,
+)
+from schemas.org import (
+    OrgCreate,
+    OrgResponse,
+    OrgWithRoleResponse,
+    MemberResponse,
+    ChangeRoleRequest,
+)
+from utils.slug import make_org_slug
 
 router = APIRouter()
 
-# --- 1. CREATE ORGANIZATION ---
-@router.post("/", response_model=OrgResponse)
-def create_organization(
-    org_in: OrgCreate, 
-    db: Session = Depends(get_db), 
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Create a new organization. 
-    The user who creates it automatically becomes the 'owner'.
-    """
-    if current_user.org_id:
-        raise HTTPException(status_code=400, detail="User already belongs to an organization.")
-        
-    # Generate URL-friendly slug
-    base_slug = org_in.name.lower().replace(" ", "-")
-    unique_slug = f"{base_slug}-{str(uuid.uuid4())[:8]}"
-    
-    # 1. Create Org
-    new_org = Organization(
-        name=org_in.name,
-        slug=unique_slug,
-        plan="free"
-    )
-    db.add(new_org)
-    db.commit()
-    db.refresh(new_org)
-    
-    # 2. Assign User to Org as Owner
-    current_user.org_id = new_org.id
-    current_user.role = "owner"
-    db.commit()
-    
-    return new_org
 
-# --- 2. GET MY ORGANIZATION ---
-@router.get("/", response_model=OrgResponse)
-def get_my_organization(
-    db: Session = Depends(get_db), 
-    current_user: User = Depends(require_org)
-):
-    """Get details of the user's current organization."""
-    org = db.query(Organization).filter(Organization.id == current_user.org_id).first()
-    return org
-
-# --- 3. GET MEMBERS ---
-@router.get("/members", response_model=List[MemberResponse])
-def get_org_members(
-    db: Session = Depends(get_db), 
-    current_user: User = Depends(require_org)
-):
-    """List all members in the organization. Any member can view this."""
-    members = db.query(User).filter(User.org_id == current_user.org_id).all()
-    return members
-
-# --- 4. INVITE USER ---
-@router.post("/invite", response_model=InviteResponse)
-def invite_user(
-    invite_in: InviteRequest,
+# --- LIST MY ORGS (no X-Org-Id needed; org switcher uses this) ---
+@router.get("/mine", response_model=List[OrgWithRoleResponse])
+def list_my_orgs(
     db: Session = Depends(get_db),
-    # ONLY owner or admin can invite 👮‍♂️
-    current_user: User = Depends(RequireRole(["owner", "admin"])) 
+    user: User = Depends(require_user),
 ):
-    """Invite a new user to the organization by email."""
-    # Check if user already exists in system
-    existing_user = db.query(User).filter(User.email == invite_in.email).first()
-    if existing_user and existing_user.org_id:
-        raise HTTPException(status_code=400, detail="User already belongs to an organization.")
-        
-    # Check for pending invite
-    existing_invite = db.query(Invitation).filter(
-        Invitation.email == invite_in.email, 
-        Invitation.status == "pending"
-    ).first()
-    
-    if existing_invite:
-        raise HTTPException(status_code=400, detail="Invitation already sent to this email.")
-
-    new_invite = Invitation(
-        org_id=current_user.org_id,
-        invited_by=current_user.id,
-        email=invite_in.email,
-        role=invite_in.role
+    rows = (
+        db.query(Membership, Organization)
+        .join(Organization, Membership.org_id == Organization.id)
+        .filter(Membership.user_id == user.id, Organization.is_active == True)
+        .order_by(Organization.created_at.asc())
+        .all()
     )
-    db.add(new_invite)
-    db.commit()
-    db.refresh(new_invite)
-    
-    # TODO: Send Email using SendGrid/Postmark here
-    
-    return new_invite
+    return [
+        OrgWithRoleResponse(
+            id=org.id,
+            name=org.name,
+            slug=org.slug,
+            plan=org.plan,
+            max_seats=org.max_seats,
+            is_active=org.is_active,
+            created_at=org.created_at,
+            role=m.role,
+        )
+        for (m, org) in rows
+    ]
 
-# --- 5. CHANGE MEMBER ROLE ---
+
+# --- CREATE ADDITIONAL ORG (existing user, becomes owner) ---
+@router.post("/", response_model=OrgWithRoleResponse)
+def create_org(
+    payload: OrgCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    org = Organization(
+        name=payload.name,
+        slug=make_org_slug(payload.name),
+        plan="free",
+        max_seats=10,
+    )
+    db.add(org)
+    db.flush()
+    membership = Membership(user_id=user.id, org_id=org.id, role="owner")
+    db.add(membership)
+    db.commit()
+    db.refresh(org)
+    return OrgWithRoleResponse(
+        id=org.id,
+        name=org.name,
+        slug=org.slug,
+        plan=org.plan,
+        max_seats=org.max_seats,
+        is_active=org.is_active,
+        created_at=org.created_at,
+        role="owner",
+    )
+
+
+# --- CURRENT ORG DETAILS ---
+@router.get("/", response_model=OrgWithRoleResponse)
+def get_current_org(ctx: OrgContext = Depends(require_org_member)):
+    org = ctx.organization
+    return OrgWithRoleResponse(
+        id=org.id,
+        name=org.name,
+        slug=org.slug,
+        plan=org.plan,
+        max_seats=org.max_seats,
+        is_active=org.is_active,
+        created_at=org.created_at,
+        role=ctx.role,
+    )
+
+
+# --- LIST MEMBERS ---
+@router.get("/members", response_model=List[MemberResponse])
+def list_members(
+    db: Session = Depends(get_db),
+    ctx: OrgContext = Depends(require_org_member),
+):
+    rows = (
+        db.query(Membership, User)
+        .join(User, Membership.user_id == User.id)
+        .filter(Membership.org_id == ctx.organization.id)
+        .order_by(Membership.created_at.asc())
+        .all()
+    )
+    return [
+        MemberResponse(
+            user_id=u.id,
+            email=u.email,
+            full_name=u.full_name,
+            role=m.role,
+            joined_at=m.created_at,
+        )
+        for (m, u) in rows
+    ]
+
+
+# --- CHANGE MEMBER ROLE (owner OR admin; admin cannot touch peers/superiors) ---
 @router.put("/members/{user_id}/role")
 def change_member_role(
     user_id: uuid.UUID,
-    role_in: ChangeRoleRequest,
+    payload: ChangeRoleRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(RequireRole(["owner", "admin"]))
+    ctx: OrgContext = Depends(RequireRole(["owner", "admin"])),
 ):
-    """Change the role of an existing member."""
-    if role_in.role not in ["owner", "admin", "member", "viewer"]:
-        raise HTTPException(status_code=400, detail="Invalid role")
-        
-    target_user = db.query(User).filter(User.id == user_id).first()
-    if not target_user:
-        raise HTTPException(status_code=404, detail="User not found")
-        
-    # SECURITY: Ensure target user is in the same org
-    if target_user.org_id != current_user.org_id:
-        raise HTTPException(status_code=403, detail="User not in your organization")
-        
-    # SECURITY: Only owners can make someone else an owner
-    if role_in.role == "owner" and current_user.role != "owner":
-        raise HTTPException(status_code=403, detail="Only owners can promote to owner")
-        
-    # SECURITY: Cannot demote the ONLY owner
-    if target_user.role == "owner" and role_in.role != "owner":
-        owner_count = db.query(User).filter(
-            User.org_id == current_user.org_id, 
-            User.role == "owner"
-        ).count()
-        if owner_count <= 1:
-            raise HTTPException(status_code=400, detail="Cannot demote the last owner of the organization")
-            
-    target_user.role = role_in.role
-    db.commit()
-    
-    return {"message": f"Successfully updated role to {role_in.role}"}
+    if payload.role not in VALID_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid role. Allowed: {list(VALID_ROLES)}.",
+        )
 
-# --- 6. REMOVE MEMBER ---
+    target = (
+        db.query(Membership)
+        .filter(
+            Membership.org_id == ctx.organization.id,
+            Membership.user_id == user_id,
+        )
+        .first()
+    )
+    if not target:
+        raise HTTPException(
+            status_code=404, detail="Member not found in this organization."
+        )
+
+    caller_rank = role_rank(ctx.role)
+    target_rank = role_rank(target.role)
+    new_rank = role_rank(payload.role)
+
+    # Admins can only act on roles BELOW their own rank, and can't promote
+    # anyone to a rank ≥ their own. Only owners can mint owners or admins.
+    if not ctx.is_owner:
+        if target_rank >= caller_rank:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only change roles for members below your own level.",
+            )
+        if new_rank >= caller_rank:
+            raise HTTPException(
+                status_code=403,
+                detail="You cannot promote a member to your own role or higher.",
+            )
+
+    # Don't demote the last owner.
+    if target.role == "owner" and payload.role != "owner":
+        owner_count = (
+            db.query(Membership)
+            .filter(
+                Membership.org_id == ctx.organization.id,
+                Membership.role == "owner",
+            )
+            .count()
+        )
+        if owner_count <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot demote the last owner. Promote someone else first.",
+            )
+
+    target.role = payload.role
+    db.commit()
+    return {"message": f"Role updated to {payload.role}."}
+
+
+# --- REMOVE MEMBER (owner OR admin; admin can't remove peers/superiors) ---
 @router.delete("/members/{user_id}")
 def remove_member(
     user_id: uuid.UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(RequireRole(["owner", "admin"]))
+    ctx: OrgContext = Depends(RequireRole(["owner", "admin"])),
 ):
-    """Remove a user from the organization."""
-    target_user = db.query(User).filter(User.id == user_id).first()
-    if not target_user:
-        raise HTTPException(status_code=404, detail="User not found")
-        
-    if target_user.org_id != current_user.org_id:
-        raise HTTPException(status_code=403, detail="User not in your organization")
-        
-    if target_user.role == "owner" and current_user.id != target_user.id:
-         raise HTTPException(status_code=403, detail="Cannot remove an owner. They must step down first.")
+    target = (
+        db.query(Membership)
+        .filter(
+            Membership.org_id == ctx.organization.id,
+            Membership.user_id == user_id,
+        )
+        .first()
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="Member not found.")
 
-    # Remove from org (Nullify org_id)
-    target_user.org_id = None
-    target_user.role = "member"  # Reset role
+    if not ctx.is_owner and role_rank(target.role) >= role_rank(ctx.role):
+        raise HTTPException(
+            status_code=403,
+            detail="You can only remove members below your own level.",
+        )
+
+    if target.role == "owner":
+        owner_count = (
+            db.query(Membership)
+            .filter(
+                Membership.org_id == ctx.organization.id,
+                Membership.role == "owner",
+            )
+            .count()
+        )
+        if owner_count <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot remove the last owner.",
+            )
+
+    db.delete(target)
     db.commit()
-    
-    return {"message": "User removed from organization"}
+    return {"message": "Member removed from organization."}

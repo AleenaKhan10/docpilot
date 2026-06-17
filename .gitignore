@@ -1,18 +1,49 @@
+# Environment secrets — NEVER commit these
 .env
-test_video.mp4
-tutorial_video.mp4
-temp_data
-final_output
-test_video_2.mp4
-test_video_3.mp4
-test_video_4.mp4
-test_video_5.mp4
-test_video_6.mp4
-test_video_7.mp4
-test_video_4.mp4
-test_ws
-__pycache__
+.env.local
+.env.production
+.env.*.local
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local data (generated PDFs, frames, etc.)
+temp_data/
+final_output/
+
+# Logs — rotated by the app; not history we want in git
+logs/
+*.log
 celerybeat-schedule.bak
 celerybeat-schedule.dat
 celerybeat-schedule.dir
-manual2.
+celerybeat-schedule
+
+# Test artefacts
+test_video*.mp4
+tutorial_video.mp4
+test_ws/
+manual*.pdf
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.swp
+*.swo
+Thumbs.db
+
+# Docker volumes when run locally (Redis appendonly etc.)
+data/

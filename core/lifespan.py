@@ -1,47 +1,67 @@
-from contextlib import asynccontextmanager
-from fastapi import FastAPI 
-from db.session import SessionLocal # DB Sessions
-from models.video import Video # Database Model
-from core.logger import logging # Logger
+"""
+Application lifecycle hooks.
 
-# Setup Logger
-logger = logging.getLogger(__name__)
+Startup task: heartbeat-based zombie reaper. Only marks a `processing`
+video as failed if its worker hasn't checked in for HEARTBEAT_STALE_SECONDS.
+A worker still alive on its heartbeat keeps its in-flight job intact even
+through a rolling API restart.
+
+Schema migrations are now owned by Alembic (`alembic upgrade head`); the
+old self-applying ALTER TABLE shim is gone.
+"""
+
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+
+from fastapi import FastAPI
+
+from core.logger import setup_logging
+from db.session import SessionLocal
+from models.video import Video
+
+logger = setup_logging()
+
+HEARTBEAT_STALE_SECONDS = 5 * 60  # 5 min — well above any single VLM call
+
+
+def _reap_stale_zombies() -> None:
+    db = SessionLocal()
+    try:
+        stale_cutoff = datetime.now(timezone.utc) - timedelta(
+            seconds=HEARTBEAT_STALE_SECONDS
+        )
+        zombies = (
+            db.query(Video)
+            .filter(
+                Video.status == "processing",
+                (Video.worker_heartbeat_at.is_(None))
+                | (Video.worker_heartbeat_at < stale_cutoff),
+            )
+            .all()
+        )
+        if not zombies:
+            logger.info("Lifespan reaper: no stale in-flight videos.")
+            return
+
+        ids = [v.id for v in zombies]
+        for v in zombies:
+            v.status = "failed"
+        db.commit()
+        logger.warning(
+            f"Lifespan reaper: marked {len(zombies)} stale-heartbeat videos as failed "
+            f"(ids={ids})"
+        )
+    except Exception as e:
+        logger.error(f"Lifespan reaper failed: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Application Lifecycle Manager.
-    Handles startup (cleanup zombies) and shutdown events.
-    """
-    
-    # --- STARTUP LOGIC ---
-    logger.info("🔄 System Startup: Checking for interrupted tasks...")
-    
-    db = SessionLocal()
-    try:
-        # 1. Find videos that were stuck in 'processing' state
-        zombie_videos = db.query(Video).filter(Video.status == "processing").all()
-        
-        if zombie_videos:
-            count = len(zombie_videos)
-            logger.warning(f"⚠️ Found {count} interrupted (zombie) tasks. Marking them as Failed.")
-            
-            # 2. Mark them as failed so users don't see infinite spinner
-            for video in zombie_videos:
-                video.status = "failed"
-            
-            db.commit()
-            logger.info("✅ Cleanup Complete: Zombies eliminated.")
-        else:
-            logger.info("✅ System Clean: No interrupted tasks found.")
-            
-    except Exception as e:
-        logger.error(f"❌ Startup Cleanup Failed: {e}")
-    finally:
-        db.close()
-    
-    # --- APP RUNS HERE ---
-    yield 
-    
-    # --- SHUTDOWN LOGIC ---
-    logger.info("🛑 System Shutdown: Closing connections...")
+    logger.info("Startup: reaping stale tasks…")
+    _reap_stale_zombies()
+    logger.info("Startup complete.")
+    yield
+    logger.info("Shutdown: closing connections.")

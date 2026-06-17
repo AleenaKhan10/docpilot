@@ -1,63 +1,73 @@
 import os
 import time
+
 from faster_whisper import WhisperModel
 
-# --- CONFIGURATION ---
-# 'base' model production ke liye best balance hai (Speed vs Accuracy).
-# Agar bohot fast chahiye to 'tiny', agar bohot accurate chahiye to 'small' use karo.
+from core.logger import setup_logging
+
+logger = setup_logging()
+
+# `base` strikes a good speed/accuracy balance on CPU. Drop to `tiny` if cold
+# transcription latency matters; upgrade to `small`/`medium` for higher
+# accuracy on noisy or multilingual audio.
 MODEL_SIZE = "base"
 
-# Device: 'cpu' (Agar Nvidia GPU hai to 'cuda' likho)
-# Compute Type: 'int8' CPU ke liye best hai. GPU ke liye 'float16'.
+# Switch to "cuda" + "float16" when a GPU is available.
 DEVICE = "cpu"
 COMPUTE_TYPE = "int8"
 
-print(f"⏳ Loading Faster-Whisper model ({MODEL_SIZE})...")
+logger.info(f"Loading Faster-Whisper model ({MODEL_SIZE})...")
 
 try:
-    # Model ko memory mein load karke rakhenge (Global Instance)
-    # Yeh pehli baar run honay par model download karega.
+    # Module-level singleton: first import downloads the weights (~150 MB)
+    # and keeps the model resident for all subsequent calls.
     model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
-    print("✅ Faster-Whisper model loaded successfully!")
+    logger.info("Faster-Whisper model loaded.")
 except Exception as e:
-    print(f"❌ Error loading model: {e}")
+    logger.error(f"Faster-Whisper model failed to load: {e}")
     model = None
 
+
 def transcribe_audio_local(audio_path: str):
-    """
-    Transcribes audio using Faster-Whisper.
-    """
+    """Transcribe an audio file. Returns a list of {start, end, text} dicts.
+    Empty list on any failure (caller must tolerate empty transcripts)."""
     if not model:
-        print("❌ Model not loaded, skipping transcription.")
+        logger.error("Whisper model not loaded; skipping transcription.")
         return []
-
     if not os.path.exists(audio_path):
-        print(f"❌ Audio file not found: {audio_path}")
+        logger.error(f"Audio file not found: {audio_path}")
         return []
 
-    print(f"🎧 Starting Optimized Transcription for: {audio_path}")
+    logger.info(f"Transcribing: {audio_path}")
     start_time = time.time()
-    
-    try:
-        # Beam Size 5 = Behtar Accuracy (multiple paths explore karta hai)
-        segments, info = model.transcribe(audio_path, beam_size=5)
-        
-        transcript_data = []
-        
-        print(f"   ℹ️ Detected language: '{info.language}' (Probability: {info.language_probability:.2f})")
 
-        # Faster-Whisper generator return karta hai, loop chalana zaroori hai
+    try:
+        # beam_size=5 explores multiple hypotheses for better accuracy
+        # at modest extra cost. Drop to 1 for fastest-possible mode.
+        segments, info = model.transcribe(audio_path, beam_size=5)
+
+        logger.info(
+            f"Detected language: '{info.language}' "
+            f"(probability {info.language_probability:.2f})"
+        )
+
+        transcript_data = []
         for segment in segments:
-            transcript_data.append({
-                "start": segment.start,
-                "end": segment.end,
-                "text": segment.text.strip()
-            })
-            
+            transcript_data.append(
+                {
+                    "start": segment.start,
+                    "end": segment.end,
+                    "text": segment.text.strip(),
+                }
+            )
+
         duration = time.time() - start_time
-        print(f"✅ Transcription complete in {duration:.2f}s! Found {len(transcript_data)} segments.")
+        logger.info(
+            f"Transcription complete in {duration:.2f}s "
+            f"({len(transcript_data)} segments)."
+        )
         return transcript_data
 
     except Exception as e:
-        print(f"❌ Transcription failed: {e}")
+        logger.error(f"Transcription failed: {e}")
         return []

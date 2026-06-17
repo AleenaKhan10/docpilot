@@ -1,375 +1,496 @@
+"""
+Two-pass video-to-document synthesis with Gemini.
 
-import os
+PASS 1 — Frame observation (per-frame, cheap, parallel-safe)
+    For every kept frame, we ask the cheap Flash model for terse FACTS only:
+    URL bar contents, page/app title, the dominant UI element, and any
+    obvious action (click target, what's typed). No interpretation, no
+    "section", no documentation prose. Output ~50-100 tokens per frame.
+
+PASS 2 — Editorial synthesis (one big call, smarter model)
+    A single call to the same Flash-tier model receives ALL observations,
+    the full Whisper transcript, the user-provided context, and the
+    output_type. The prompt explicitly asks the model to be a WRITER, not
+    a transcriber: drop setup noise, group related actions, place
+    screenshots strategically (one or two, at meaningful moments), extract
+    reference links, and adapt depth to the available signal.
+
+The result is a Document {title, summary, output_type, sections:[...]}
+matching the frontend's Section/Block schema. The worker stores it on
+`videos.document_json`; the API translates any `frame_id` references into
+signed download URLs at read time.
+"""
+
+import asyncio
 import json
-import time
+import os
 import re
+from typing import Optional
+
 import google.generativeai as genai
+from PIL import Image
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
 from core.config import settings
+from core.logger import setup_logging
 
-# Configure Gemini
+logger = setup_logging()
 
-api_key_google= "AIzaSyBWGgFFovMw4y5kX3dtwB13vk-hu1JMMg4"
-genai.configure(api_key=api_key_google)
-# genai.configure(api_key=settings.GOOGLE_API_KEY)
-print("API_KEY: ", api_key_google)
+# --- Lazy configuration -------------------------------------------------------
+_configured = False
 
 
-model_flash = genai.GenerativeModel("gemini-2.5-flash")
+def _ensure_configured() -> None:
+    global _configured
+    if _configured:
+        return
+    if not settings.GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY is not set.")
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    _configured = True
 
-# --- HELPER: JSON CLEANER ---
-def _clean_json_response(response_text: str):
-    try:
-        if "```" in response_text:
-            match = re.search(r"```(?:json)?\s*(.*)\s*```", response_text, re.DOTALL)
-            if match:
-                return match.group(1)
-        return response_text
-    except Exception:
-        return response_text
 
-# --- HELPER: AUDIO CONTEXT ---
-def _get_audio_context_for_timestamp(timestamp, transcript):
-    if not transcript:
-        return None
-    
-    context_text = []
-    for segment in transcript:
-        start = segment.get("start", 0)
-        end = segment.get("end", 0)
-        text = segment.get("text", "")
-        
-        # Buffer: 2 seconds before and after
-        if (start - 2.0 <= timestamp <= end + 2.0):
-            context_text.append(text)
-    
-    return " ".join(context_text) if context_text else None
+def _get_model(name: Optional[str] = None) -> genai.GenerativeModel:
+    _ensure_configured()
+    return genai.GenerativeModel(name or settings.GEMINI_MODEL or "gemini-flash-latest")
 
-# --- TRANSCRIPTION (Fixed: Thora Lenient) ---
-def transcribe_audio_gemini(audio_path: str):
-    if not audio_path or not os.path.exists(audio_path):
-        return []
 
-    print("✨ Uploading Audio to Gemini...")
-    try:
-        audio_file = genai.upload_file(path=audio_path)
-        print("🧠 Gemini Hearing: Analyzing audio...")
-        
-        # Prompt thora loose kiya hai taake 0 segments na aayein
-        prompt = """
-        Transcribe this audio VERBATIM.
-        1. Capture all spoken words accurately.
-        2. Provide timestamps.
-        3. Return ONLY raw JSON: [{"start": 0.0, "end": 2.0, "text": "..."}]
-        """
-        response = model_flash.generate_content(
-            [prompt, audio_file],
-            generation_config={"response_mime_type": "application/json"}
-        )
-        
-        cleaned_text = _clean_json_response(response.text)
-        data = json.loads(cleaned_text)
-        print(f"🔍 DEBUG: Transcript contains {len(data)} segments.")
-        return data
-    except Exception as e:
-        print(f"❌ Transcription Error: {e}")
-        return []
+# --- Helpers ------------------------------------------------------------------
+def _clean_json(text: str) -> str:
+    """Strip markdown code fences."""
+    text = (text or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    return text.strip()
 
-# ======================================================
-# 🔥 THE ENTERPRISE GENERATOR LOGIC (With Logs) 🔥
-# ======================================================
-def generate_documentation_steps(transcript: list, frames_dir: str, interval: int = 2):
-    print("🔹 Mode: Enterprise Production Flow")
-    generated_steps = []
-    
-    # 1. Get all frames
-    frames_paths = sorted([
-        os.path.join(frames_dir, f) for f in os.listdir(frames_dir) if f.endswith(".jpg")
-    ])
-    
-    total_frames = len(frames_paths)
-    print(f"📊 Total Frames to Analyze: {total_frames}")
 
-    # 2. Iterate EVERY frame
-    for i, frame_path in enumerate(frames_paths):
-        
-        timestamp = i * interval
-        audio_text = _get_audio_context_for_timestamp(timestamp, transcript)
-        
-        # --- LOGGING ADDED: USER KO DIKHAO KYA HO RAHA HAI ---
-        print(f"   -> Processing Frame {i+1}/{total_frames} at {timestamp}s | Audio: {'✅' if audio_text else '🔇'}")
-        # -----------------------------------------------------
+# Paced caller: spaces consecutive Gemini calls 4.5 s apart. On the paid tier
+# this is overkill — at flash-latest paid you can run ~1000 RPM — but keeping
+# it conservative until we observe throughput in production.
+MIN_INTERVAL_S = 4.5
+_last_call_at = 0.0
+_call_lock = asyncio.Lock()
 
-        # The Sanitized Prompt
-        prompt = f"""
-        You are a Senior Technical Writer creating a User Manual (SOP).
-        
-        INPUT CONTEXT:
-        - **Visual:** Screenshot of the UI at {timestamp} seconds.
-        - **Audio Context:** "{audio_text if audio_text else 'NO AUDIO'}"
 
-        CRITICAL FILTERING RULES:
-        1. **IGNORE CASUAL TALK:** If audio contains "parents loved it", "cool", "neat", IGNORE the audio and focus ONLY on the Visual Action.
-        2. **VISUAL PRIORITY:** If the screen shows a clear action (clicking/typing), document it even if audio is silent.
-        3. **STATIC CHECK:** If the screen is idle/static with no interaction, return {{ "title": "skip", "description": "skip" }}
+async def _wait_for_slot() -> None:
+    global _last_call_at
+    async with _call_lock:
+        now = asyncio.get_event_loop().time()
+        wait = MIN_INTERVAL_S - (now - _last_call_at)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _last_call_at = asyncio.get_event_loop().time()
 
-        WRITING STANDARDS:
-        - **Title:** Imperative Verb + Object (e.g., "Edit Customer Details").
-        - **Description:** [Action] + [**UI Element**] + [Location]. 
-          *Example:* "Click the **Edit** button in the top-right header."
 
-        Return JSON ONLY: {{ "title": "...", "description": "..." }}
-        """
+@retry(
+    stop=stop_after_attempt(4),
+    wait=wait_exponential(multiplier=3, min=8, max=45),
+    retry=retry_if_exception_type(Exception),
+)
+async def _call_model(model: genai.GenerativeModel, parts) -> str:
+    await _wait_for_slot()
+    response = await model.generate_content_async(parts)
+    return (response.text or "").strip()
 
+
+@retry(
+    stop=stop_after_attempt(4),
+    wait=wait_exponential(multiplier=3, min=8, max=45),
+    retry=retry_if_exception_type(Exception),
+)
+def _call_model_sync(model: genai.GenerativeModel, prompt: str) -> str:
+    """Sync variant. Used for Pass 2 to dodge the async grpc client-state
+    bug in google.generativeai when asyncio.run is called more than once."""
+    response = model.generate_content(prompt)
+    return (response.text or "").strip()
+
+
+# --- PASS 1: per-frame observations ------------------------------------------
+PASS1_PROMPT = """You are a screen-recording analyst. Look at this single frame.
+
+Return ONLY a JSON object with these fields. Be terse and FACTUAL — no documentation prose, no "section names", no interpretation about what the user is "trying to accomplish".
+
+{
+  "page_title": "<browser tab title or window title if visible, else empty string>",
+  "url": "<full URL from address bar if visible, else empty string>",
+  "app": "<application or website name visible (e.g. 'YouTube', 'Social Blade', 'VS Code'). Empty string if generic.>",
+  "visible_state": "<one sentence describing the dominant UI on screen — what page/screen the user is on>",
+  "action_hint": "<if a click target / hover / focused input / typed text is visible, say what (one short phrase). Empty string otherwise.>",
+  "typed_text": "<actual text being typed in an input, if visible. Empty string otherwise.>"
+}
+
+Output nothing but the JSON. No markdown, no commentary."""
+
+
+async def _pass1_one_frame(
+    semaphore: asyncio.Semaphore,
+    model: genai.GenerativeModel,
+    frame_id: str,
+    frame_path: str,
+    timestamp: float,
+) -> Optional[dict]:
+    async with semaphore:
         try:
-            uploaded_file = genai.upload_file(frame_path)
-            response = model_flash.generate_content(
-                [prompt, uploaded_file],
-                generation_config={"response_mime_type": "application/json"}
-            )
-            
-            cleaned_text = _clean_json_response(response.text)
-            if not cleaned_text: continue
-            
-            step_data = json.loads(cleaned_text)
-            
-            # --- FILTERING ---
-            if not step_data or str(step_data.get("title")).lower() == "skip":
-                # print("      (Skipping: Static or Irrelevant)") # Optional verbose log
-                continue
-
-            # Deduplication
-            if generated_steps:
-                last_step = generated_steps[-1]
-                if last_step['title'] == step_data.get("title"):
-                    if last_step['description'][:15] == step_data.get("description")[:15]:
-                        continue
-
-            # Add Step
-            generated_steps.append({
-                "step_number": len(generated_steps) + 1,
-                "timestamp": timestamp,
-                "image_path": frame_path,
-                "title": step_data.get("title", "Step"),
-                "description": step_data.get("description", "Perform action.")
-            })
-            
-            # Show Success Log
-            print(f"      ✅ Generated: {step_data.get('title')}")
-            
-            time.sleep(1) # Safety delay
-
+            with Image.open(frame_path) as img:
+                img.load()
+                raw = await _call_model(model, [PASS1_PROMPT, img])
+            data = json.loads(_clean_json(raw))
+            return {
+                "frame_id": frame_id,
+                "timestamp": round(timestamp, 1),
+                "page_title": data.get("page_title", "") or "",
+                "url": data.get("url", "") or "",
+                "app": data.get("app", "") or "",
+                "visible_state": data.get("visible_state", "") or "",
+                "action_hint": data.get("action_hint", "") or "",
+                "typed_text": data.get("typed_text", "") or "",
+            }
         except Exception as e:
-            # print(f"❌ Step Error: {e}")
-            pass
-            
-    return generated_steps
+            logger.warning(f"Pass 1 frame {frame_id} failed: {e}")
+            return None
 
-# import os
-# import json
-# import time
-# import re
-# import google.generativeai as genai
-# from core.config import settings
 
-# # Configure Gemini
-# genai.configure(api_key=settings.GOOGLE_API_KEY)
-# model_flash = genai.GenerativeModel("gemini-2.0-flash")
+# --- PASS 2: editorial synthesis ---------------------------------------------
+OUTPUT_TYPE_GUIDANCE = {
+    "sop": (
+        "Write a Standard Operating Procedure: instructions someone else can "
+        "follow tomorrow to reproduce the same outcome."
+    ),
+    "training": (
+        "Write a Training Module: explain the concept, then the steps, then "
+        "summarize what the learner should now be able to do. Include short "
+        "comprehension checks as `decision` blocks where appropriate."
+    ),
+    "bug_report": (
+        "Write a Bug Report: capture exact reproduction steps, expected vs "
+        "actual behaviour, the environment shown on screen, and severity if "
+        "you can infer it."
+    ),
+    "changelog": (
+        "Write a Changelog entry: list what was added, changed, fixed, or "
+        "removed using `step` blocks under a single section per change "
+        "category."
+    ),
+    "audit": (
+        "Write an Audit Trail: timestamped actor → action log, categorised "
+        "by area. Use `table` blocks if a tabular structure fits."
+    ),
+    "client_handover": (
+        "Write a Client Handover: project status, deliverables checklist, "
+        "next steps, references."
+    ),
+}
 
-# # --- HELPER: JSON CLEANER (Production Safe) ---
-# def _clean_json_response(response_text: str):
-#     """
-#     Gemini ke response se ```json markers hata kar pure JSON nikalta hai.
-#     """
-#     try:
-#         if "```" in response_text:
-#             match = re.search(r"```(?:json)?\s*(.*)\s*```", response_text, re.DOTALL)
-#             if match:
-#                 return match.group(1)
-#         return response_text
-#     except Exception:
-#         return response_text
 
-# def transcribe_audio_gemini(audio_path: str):
-#     """
-#     Audio Transcript: Strict Verbatim Mode (No Summaries).
-#     """
-#     if not audio_path or not os.path.exists(audio_path):
-#         return []
+def _build_pass2_prompt(
+    output_type: str, user_context: Optional[str], transcript_text: str,
+    observations_json: str, duration_seconds: float,
+) -> str:
+    guidance = OUTPUT_TYPE_GUIDANCE.get(output_type, OUTPUT_TYPE_GUIDANCE["sop"])
+    user_ctx_block = (
+        f'User-provided context: "{user_context.strip()}"\n'
+        if user_context and user_context.strip()
+        else "User-provided context: (none)\n"
+    )
+    return f"""You are a senior technical writer. You are NOT a transcriber.
 
-#     print("✨ Uploading Audio to Gemini...")
-#     try:
-#         audio_file = genai.upload_file(path=audio_path)
-#         print("🧠 Gemini Hearing: Analyzing audio...")
-        
-#         prompt = """
-#         Transcribe this audio VERBATIM (word-for-word).
-#         RULES:
-#         1. Do NOT summarize. Write exactly what is spoken.
-#         2. Break down speech into small segments with accurate timestamps.
-        
-#         Return ONLY raw JSON: [{"start": 0.0, "end": 2.0, "text": "Hello world"}]
-#         """
-#         response = model_flash.generate_content(
-#             [prompt, audio_file],
-#             generation_config={"response_mime_type": "application/json"}
-#         )
-        
-#         cleaned_text = _clean_json_response(response.text)
-#         data = json.loads(cleaned_text)
-        
-#         print(f"🔍 DEBUG: Transcript contains {len(data)} segments.")
-#         return data
-#     except Exception as e:
-#         print(f"❌ Transcription Error: {e}")
-#         return []
+A user recorded a {duration_seconds:.0f}-second screen video. Your job: produce CLEAN, MINIMAL documentation a reader can actually follow.
 
-# # ======================================================
-# # 🔥 MODE 1: VISUAL ONLY (Master Level - Silent) 🔥
-# # ======================================================
-# def _generate_visual_only(frames_dir, interval):
-#     print("🔹 Mode: Visual-Only (Master Class Documentation)")
-#     generated_steps = []
-    
-#     frames_paths = sorted([
-#         os.path.join(frames_dir, f) for f in os.listdir(frames_dir) if f.endswith(".jpg")
-#     ])
-    
-#     for i, frame_path in enumerate(frames_paths):
-#         timestamp = i * interval
-#         print(f"   -> Analyzing Frame at {timestamp}s...")
-        
-#         # --- THE MASTER VISUAL PROMPT ---
-#         prompt = """
-#         You are a Senior Technical Writer creating a Standard Operating Procedure (SOP).
-        
-#         TASK:
-#         Analyze this UI screenshot. Deduce the user's action based on visual cues (highlighted buttons, open menus, cursors).
-        
-#         WRITING STANDARDS (Microsoft Manual of Style):
-#         1. **Imperative Mood:** Start with a strong VERB (e.g., "Click", "Select", "Enter").
-#         2. **Formatting:** ALWAYS bold UI element names using double asterisks (e.g., Click **Save**, Select **Profile**).
-#         3. **Location Context:** Specify WHERE the element is (e.g., "in the top-right corner", "in the sidebar").
-#         4. **Iconography:** If it's an icon, describe it (e.g., "Click the **Settings** icon (gear symbol)").
-        
-#         STATIC CHECK:
-#         If the screen appears idle with no meaningful interaction, return null.
+{user_ctx_block}
+Target document type: **{output_type}**
+{guidance}
 
-#         Example Output:
-#         { "title": "Navigate to Dashboard", "description": "Click the **Dashboard** link located in the left navigation sidebar." }
+═══════════════════════════════════════════════════════════════
+AUDIO TRANSCRIPT (verbatim, may be partial or empty):
+{transcript_text or "(no audio)"}
 
-#         Return JSON ONLY.
-#         """
-        
-#         try:
-#             uploaded_file = genai.upload_file(frame_path)
-#             response = model_flash.generate_content(
-#                 [prompt, uploaded_file],
-#                 generation_config={"response_mime_type": "application/json"}
-#             )
-            
-#             cleaned_text = _clean_json_response(response.text)
-#             if not cleaned_text: continue
-            
-#             step_data = json.loads(cleaned_text)
-#             if not step_data: continue
+═══════════════════════════════════════════════════════════════
+PER-FRAME OBSERVATIONS (Pass 1 output — facts only, ordered by timestamp):
+{observations_json}
 
-#             # --- SMART DEDUPLICATION ---
-#             if generated_steps:
-#                 last_step = generated_steps[-1]
-#                 # Agar same title hai, to duplicate count hoga
-#                 if last_step['title'] == step_data.get("title"):
-#                     continue
+═══════════════════════════════════════════════════════════════
+EDITORIAL RULES — read these carefully:
 
-#             generated_steps.append({
-#                 "step_number": len(generated_steps) + 1,
-#                 "timestamp": timestamp,
-#                 "image_path": frame_path,
-#                 "title": step_data.get("title", "Step"),
-#                 "description": step_data.get("description", "Action performed.")
-#             })
-#             time.sleep(1) 
-#         except Exception:
-#             pass
-            
-#     return generated_steps
+1. **BE A WRITER, NOT A STENOGRAPHER.** A bad doc has 29 numbered steps that
+   mirror every click. A good doc collapses related clicks into one
+   meaningful step. Aim for the doc a human technical writer would produce.
 
-# # ======================================================
-# # 🔥 MODE 2: AUDIO DRIVEN (Master Level - Pro) 🔥
-# # ======================================================
-# def _generate_with_audio(transcript, frames_dir, interval):
-#     print("🔹 Mode: Audio-Driven (Master Class Documentation)")
-#     generated_steps = []
-    
-#     for segment in transcript:
-#         text = segment.get("text", "")
-#         start_time = segment.get("start", 0)
-        
-#         if len(text) < 5: continue
+2. **DROP NOISE.** Skip: "Open Chrome", "open a new tab", "click address bar",
+   "scroll down to find X", going-back-and-forth, hesitation. The reader
+   doesn't need it.
 
-#         frame_index = int(start_time / interval) + 1
-#         frame_name = f"frame_{frame_index:03d}.jpg"
-#         frame_path = os.path.join(frames_dir, frame_name)
-        
-#         if not os.path.exists(frame_path): continue
-            
-#         print(f"   -> Processing Step: '{text[:20]}...'")
+3. **GROUP RELATED ACTIONS.** Three clicks to reach a page → ONE step:
+   "Navigate to the channel's page". A long typed phrase → one step.
 
-#         # --- THE MASTER AUDIO PROMPT ---
-#         prompt = f"""
-#         You are a Lead Technical Writer at a top-tier SaaS company.
-        
-#         INPUT CONTEXT:
-#         - **User Intent (Audio):** "{text}" (Why are they doing this?).
-#         - **Visual Reality (Image):** UI Screenshot (How and Where?).
+4. **ADAPT DEPTH TO SIGNAL.**
+   • If the audio explained the *why*, keep steps tight — don't repeat
+     what the speaker said.
+   • If the audio is silent or unrelated, you must infer purpose from
+     frames and may need slightly more detail to compensate.
+   • If the same task could be done many ways, focus on what THIS recording
+     actually demonstrates.
 
-#         STRICT WRITING GUIDELINES (SOP Standard):
-#         1. **Goal-Oriented Titles:** The title must describe the OUTCOME, not just the click.
-#            - Bad: "Click Settings"
-#            - Good: "Configure System Settings"
-        
-#         2. **Precise Description Formula:**
-#            [Imperative Verb] + [**Element Name**] + [Location/Context] + [Reason from Audio].
-           
-#            - *Example:* "Click the **Export** button in the top-right corner to download the report as a CSV file."
-        
-#         3. **Formatting Rules:** - UI Labels must be **Bold** (e.g., **Submit**, **Cancel**).
-#            - Do not use passive voice ("The user is..."). Use commands ("Click...", "Type...").
-        
-#         4. **Filter:** If the audio is conversational filler (e.g., "So yeah...", "Umm..."), return {{ "title": "skip", "description": "skip" }}
+5. **SCREENSHOTS — STRATEGIC, NOT PER-STEP.**
+   • Include AT MOST 1-2 image blocks total for a short / simple doc.
+   • Always include one screenshot of the END RESULT (the destination page,
+     the success state, the final form).
+   • Optionally one at the top showing a distinctive starting state.
+   • Use `frame_id` from observations to reference specific frames.
+   • Do NOT put a screenshot next to every step. That is Scribe. We are
+     not Scribe.
 
-#         Return JSON ONLY: {{ "title": "Action Title", "description": "Instructional description." }}
-#         """
-        
-#         try:
-#             uploaded_file = genai.upload_file(frame_path)
-#             response = model_flash.generate_content(
-#                 [prompt, uploaded_file],
-#                 generation_config={"response_mime_type": "application/json"}
-#             )
-            
-#             cleaned_text = _clean_json_response(response.text)
-#             step_data = json.loads(cleaned_text)
-            
-#             if str(step_data.get("title")).lower() == "skip":
-#                 continue
+6. **REFERENCES.** If a specific external tool / domain / site appears
+   (e.g. "socialblade.com", a docs URL, a third-party service), include
+   a `References` section at the end with `link` blocks. ALSO inline a
+   `link` block when a step explicitly says "open <url>".
 
-#             generated_steps.append({
-#                 "step_number": len(generated_steps) + 1,
-#                 "timestamp": start_time,
-#                 "image_path": frame_path,
-#                 "title": step_data.get("title", "Step"),
-#                 "description": step_data.get("description", text)
-#             })
-#             time.sleep(0.5) 
-#         except Exception as e:
-#             print(f"❌ Step Generation Error: {e}")
-            
-#     return generated_steps
+7. **STRUCTURE SIZE.** Simple tasks → 1 section, 3-5 steps. Medium
+   tasks → 2-3 sections. Complex tasks → 4-8 sections with intros.
 
-# # --- MAIN CONTROLLER ---
-# def generate_documentation_steps(transcript: list, frames_dir: str, interval: int = 2):
-#     if not transcript or len(transcript) == 0:
-#         print("⚠️ No Transcript found. Switching to Silent/Visual Mode.")
-#         return _generate_visual_only(frames_dir, interval)
-    
-#     return _generate_with_audio(transcript, frames_dir, interval)
+8. **TONE.** Instructional, second-person, concise. NO "the user clicks".
+   NO "as shown in the screenshot". Active voice, short sentences.
+
+═══════════════════════════════════════════════════════════════
+OUTPUT — return ONLY this JSON. No markdown fences, no commentary outside the JSON.
+
+{{
+  "title": "<the one-line headline. Eg 'Look up YouTube channel earnings on Social Blade'.>",
+  "summary": "<2-3 sentences. What this doc accomplishes + the prerequisites.>",
+  "output_type": "{output_type}",
+  "sections": [
+    {{
+      "heading": "<section title>",
+      "intro": "<optional one-sentence intro. Omit for short docs.>",
+      "blocks": [
+        {{ "type": "paragraph", "text": "..." }},
+        {{ "type": "step", "number": 1, "title": "<imperative one-liner>", "detail": "<optional 1-2 sentence elaboration>", "timestamp_seconds": <float or null> }},
+        {{ "type": "callout", "kind": "tip"|"note"|"warning", "title": "<optional>", "text": "..." }},
+        {{ "type": "image", "frame_id": "<frame_NNN from observations>", "caption": "<one short sentence>" }},
+        {{ "type": "link", "url": "https://...", "label": "<short name>", "description": "<optional one phrase>" }},
+        {{ "type": "list", "ordered": false, "intro": "<optional>", "items": ["...", "..."] }},
+        {{ "type": "decision", "question": "...", "branches": [{{"label": "...", "outcome": "..."}}] }}
+      ]
+    }}
+  ]
+}}
+
+Block types you may use: paragraph, step, callout, image, link, list, decision, code, table.
+For STEP blocks, `number` should be the sequence WITHIN that section's steps (1, 2, 3...).
+The `frame_id` on image blocks MUST match a frame_id from the observations above.
+
+Now produce the JSON."""
+
+
+def _build_transcript_text(transcript: list) -> str:
+    if not transcript:
+        return ""
+    lines = []
+    for seg in transcript:
+        start = seg.get("start", 0)
+        text = (seg.get("text") or "").strip()
+        if text:
+            lines.append(f"[{start:6.1f}s] {text}")
+    return "\n".join(lines)
+
+
+def _compact_observations(observations: list[dict]) -> str:
+    """Pretty-but-compact JSON for Pass 2 to read."""
+    return json.dumps(observations, indent=2, ensure_ascii=False)
+
+
+# --- Public entry -------------------------------------------------------------
+def generate_structured_document(
+    transcript: list,
+    frames_dir: str,
+    user_context: Optional[str] = None,
+    output_type: str = "sop",
+    interval: int = 1,
+) -> dict:
+    """Two-pass pipeline. Returns a Document dict.
+
+    Document shape matches the frontend renderer:
+        {
+          "title": str,
+          "summary": str,
+          "output_type": str,
+          "sections": [
+            {
+              "heading": str,
+              "intro": str | None,
+              "blocks": [ {type: ..., ...}, ... ],
+            },
+          ],
+        }
+    """
+    frame_paths = sorted(
+        os.path.join(frames_dir, f)
+        for f in os.listdir(frames_dir)
+        if f.lower().endswith((".jpg", ".jpeg", ".png"))
+    )
+    if not frame_paths:
+        return _empty_document(output_type, "Empty recording")
+
+    model = _get_model()
+    logger.info(
+        f"Pipeline start: {len(frame_paths)} frames, output_type={output_type}, "
+        f"audio_segments={len(transcript or [])}"
+    )
+
+    # ─── PASS 1 ──────────────────────────────────────────────────────────────
+    semaphore = asyncio.Semaphore(1)
+
+    async def run_pass1():
+        tasks = []
+        for i, path in enumerate(frame_paths):
+            # frame files are named frame_001.jpg, frame_002.jpg, etc.
+            frame_id = os.path.splitext(os.path.basename(path))[0]
+            ts = i * interval
+            tasks.append(_pass1_one_frame(semaphore, model, frame_id, path, ts))
+        return await asyncio.gather(*tasks)
+
+    pass1_raw = asyncio.run(run_pass1())
+    observations = [o for o in pass1_raw if o is not None]
+    logger.info(f"Pass 1: {len(observations)}/{len(frame_paths)} frames produced observations")
+
+    if not observations:
+        return _empty_document(output_type, "Could not analyse frames")
+
+    # ─── PASS 2 ──────────────────────────────────────────────────────────────
+    duration_estimate = (
+        max(o["timestamp"] for o in observations) if observations else 0.0
+    )
+    prompt = _build_pass2_prompt(
+        output_type=output_type,
+        user_context=user_context,
+        transcript_text=_build_transcript_text(transcript),
+        observations_json=_compact_observations(observations),
+        duration_seconds=duration_estimate,
+    )
+
+    # Pass 2 = single sync call. We deliberately avoid asyncio.run() here:
+    # the google.generativeai SDK's grpc client state from Pass 1's event loop
+    # corrupts when a second loop is opened in the same process. The sync
+    # path doesn't trigger the bug, and one call doesn't need parallelism.
+    try:
+        pass2_raw = _call_model_sync(model, prompt)
+    except Exception as e:
+        logger.error(f"Pass 2 failed completely: {e}")
+        return _empty_document(output_type, "AI synthesis failed")
+
+    try:
+        document = json.loads(_clean_json(pass2_raw))
+    except json.JSONDecodeError as e:
+        logger.error(f"Pass 2 JSON parse failed: {e}; raw head: {pass2_raw[:300]!r}")
+        return _empty_document(output_type, "AI returned malformed output")
+
+    document = _normalise_document(document, output_type)
+    logger.info(
+        f"Pass 2: produced {len(document['sections'])} section(s), "
+        f"{sum(len(s.get('blocks', [])) for s in document['sections'])} block(s)"
+    )
+    return document
+
+
+def _empty_document(output_type: str, title: str) -> dict:
+    return {
+        "title": title,
+        "summary": "We weren't able to produce a meaningful document from this recording.",
+        "output_type": output_type,
+        "sections": [],
+    }
+
+
+def _normalise_document(doc: dict, output_type: str) -> dict:
+    """Trust-but-verify the Pass 2 JSON. Drop unknown block types, coerce
+    missing fields, ensure block ordering is contiguous."""
+    valid_block_types = {
+        "paragraph", "step", "callout", "image", "link",
+        "list", "decision", "code", "table",
+    }
+    valid_callout_kinds = {"tip", "note", "warning", "danger"}
+
+    sections = []
+    for s_idx, section in enumerate(doc.get("sections") or []):
+        if not isinstance(section, dict):
+            continue
+        heading = (section.get("heading") or "").strip()
+        if not heading:
+            continue
+        clean_blocks = []
+        order = 1
+        for block in section.get("blocks") or []:
+            if not isinstance(block, dict):
+                continue
+            btype = block.get("type")
+            if btype not in valid_block_types:
+                continue
+            if btype == "callout" and block.get("kind") not in valid_callout_kinds:
+                block["kind"] = "note"
+            block["order"] = order
+            order += 1
+            clean_blocks.append(block)
+        sections.append(
+            {
+                "id": f"s{s_idx + 1}",
+                "order": s_idx + 1,
+                "heading": heading,
+                "intro": (section.get("intro") or "").strip() or None,
+                "blocks": clean_blocks,
+            }
+        )
+
+    return {
+        "title": (doc.get("title") or "Untitled document").strip(),
+        "summary": (doc.get("summary") or "").strip(),
+        "output_type": (doc.get("output_type") or output_type).strip(),
+        "sections": sections,
+    }
+
+
+# --- Legacy single-pass entry (kept for back-compat with old imports) --------
+def generate_documentation_steps(transcript, frames_dir, interval=1):
+    """Compatibility shim: returns a flat-step list mirroring the previous
+    output shape, derived from the new two-pass document.
+
+    Used only if some old caller hasn't been migrated. New callers should
+    use generate_structured_document directly.
+    """
+    document = generate_structured_document(
+        transcript=transcript,
+        frames_dir=frames_dir,
+        user_context=None,
+        output_type="sop",
+        interval=interval,
+    )
+    flat: list[dict] = []
+    step_n = 0
+    for section in document.get("sections", []):
+        heading = section.get("heading") or "General"
+        intro = section.get("intro") or None
+        intro_used = False
+        for block in section.get("blocks") or []:
+            if block.get("type") != "step":
+                continue
+            step_n += 1
+            flat.append(
+                {
+                    "step_number": step_n,
+                    "timestamp": block.get("timestamp_seconds") or 0.0,
+                    "title": heading,
+                    "section_summary": intro if not intro_used else None,
+                    "description": (block.get("title") or "").strip(),
+                    "explanation": block.get("detail"),
+                    "tip": None,
+                    "note": None,
+                    "url": None,
+                    "image_path": None,
+                }
+            )
+            intro_used = True
+    return flat
