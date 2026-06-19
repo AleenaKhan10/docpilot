@@ -36,6 +36,7 @@ def send_email(
     html: str,
     text: str | None = None,
     reply_to: str | None = None,
+    headers: dict[str, str] | None = None,
 ) -> bool:
     """Send a single email through Resend. Returns True on 2xx.
 
@@ -57,6 +58,8 @@ def send_email(
         payload["text"] = text
     if reply_to:
         payload["reply_to"] = reply_to
+    if headers:
+        payload["headers"] = headers
 
     try:
         r = httpx.post(
@@ -81,23 +84,26 @@ def send_invite_email(
     organization_name: str,
     role: str,
     inviter_name: str | None,
+    inviter_email: str | None = None,
     accept_url: str,
     is_existing_user: bool,
 ) -> bool:
-    """Render and send the invite email."""
+    """Render and send the invite email.
+
+    Copy is intentionally plain — no marketing pitch, no promotional
+    language, no emoji — because Gmail and friends downrank exactly
+    that kind of wording on a young domain. The subject names the
+    inviter so it reads as a person-to-person notification, not a
+    bulk-mail blast.
+    """
 
     role_display = role.capitalize()
-    inviter_line = (
-        f"<strong>{inviter_name}</strong> invited you"
-        if inviter_name
-        else "You've been invited"
-    )
-    cta_label = "Accept invitation"
-    pretext = (
-        f"Join {organization_name} on DocPilot as {role_display.lower()}."
-        if not is_existing_user
-        else f"Accept your role of {role_display.lower()} in {organization_name}."
-    )
+    who = inviter_name or "Someone"
+    subject = f"{who} added you to {organization_name} on DocPilot"
+
+    # Hidden Gmail "preview text" — the snippet shown next to the
+    # subject in the inbox list. Plain and factual.
+    pretext = f"{who} gave you {role_display} access on DocPilot. Open the link to sign in."
 
     html = f"""\
 <!doctype html>
@@ -105,25 +111,22 @@ def send_invite_email(
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>You're invited to {organization_name} on DocPilot</title>
+    <title>{subject}</title>
   </head>
-  <body style="margin:0;padding:0;background:#0b0b0c;font-family:'DM Sans',-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#e6e6e6;">
-    <span style="display:none;color:#0b0b0c;">{pretext}</span>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#0b0b0c;padding:32px 16px;">
+  <body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1a1a;">
+    <span style="display:none;color:#ffffff;font-size:1px;">{pretext}</span>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#ffffff;padding:24px 16px;">
       <tr><td align="center">
-        <table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background:#141416;border:1px solid #26262a;border-radius:12px;padding:32px;">
-          <tr><td>
-            <div style="font-size:18px;font-weight:600;letter-spacing:-0.01em;color:#fafafa;margin-bottom:24px;">DocPilot</div>
-            <h1 style="font-size:22px;font-weight:600;line-height:1.3;color:#fafafa;margin:0 0 16px;">You're invited to join {organization_name}</h1>
-            <p style="font-size:15px;line-height:1.6;color:#b3b3b3;margin:0 0 24px;">{inviter_line} to <strong style="color:#fafafa;">{organization_name}</strong> on DocPilot as <strong style="color:#fafafa;">{role_display}</strong>.</p>
-            <p style="font-size:15px;line-height:1.6;color:#b3b3b3;margin:0 0 32px;">DocPilot turns screen recordings into structured documentation — SOPs, training guides, handovers — automatically.</p>
-            <div style="margin:0 0 32px;">
-              <a href="{accept_url}" style="display:inline-block;background:#fafafa;color:#0b0b0c;font-weight:600;font-size:15px;padding:12px 24px;border-radius:8px;text-decoration:none;">{cta_label}</a>
-            </div>
-            <p style="font-size:13px;line-height:1.6;color:#7a7a7a;margin:0 0 8px;">If the button doesn't work, paste this into your browser:</p>
-            <p style="font-size:13px;line-height:1.6;color:#9a9a9a;margin:0 0 32px;word-break:break-all;"><a href="{accept_url}" style="color:#9a9a9a;text-decoration:underline;">{accept_url}</a></p>
-            <hr style="border:none;border-top:1px solid #26262a;margin:0 0 24px;" />
-            <p style="font-size:12px;line-height:1.6;color:#666;margin:0;">This invitation expires in 7 days. If you didn't expect it, you can safely ignore this email.</p>
+        <table role="presentation" width="540" cellspacing="0" cellpadding="0" border="0" style="max-width:540px;text-align:left;">
+          <tr><td style="padding-bottom:24px;">
+            <p style="font-size:14px;line-height:1.6;color:#1a1a1a;margin:0 0 16px;">Hi,</p>
+            <p style="font-size:14px;line-height:1.6;color:#1a1a1a;margin:0 0 16px;">{who} added you to <strong>{organization_name}</strong> on DocPilot as a {role_display}.</p>
+            <p style="font-size:14px;line-height:1.6;color:#1a1a1a;margin:0 0 24px;">Open the link below to sign in and start using it:</p>
+            <p style="margin:0 0 24px;">
+              <a href="{accept_url}" style="color:#1a73e8;text-decoration:underline;font-size:14px;">{accept_url}</a>
+            </p>
+            <p style="font-size:13px;line-height:1.6;color:#555555;margin:0 0 8px;">This link expires in 7 days. If you weren't expecting this email, you can ignore it.</p>
+            <p style="font-size:13px;line-height:1.6;color:#555555;margin:0;">— DocPilot</p>
           </td></tr>
         </table>
       </td></tr>
@@ -133,14 +136,26 @@ def send_invite_email(
 """
 
     text = (
-        f"{inviter_line.replace('<strong>', '').replace('</strong>', '')} to {organization_name} on DocPilot as {role_display}.\n\n"
-        f"Accept the invitation: {accept_url}\n\n"
-        f"This invitation expires in 7 days. If you didn't expect it, you can ignore this email."
+        f"Hi,\n\n"
+        f"{who} added you to {organization_name} on DocPilot as a {role_display}.\n\n"
+        f"Open the link below to sign in and start using it:\n"
+        f"{accept_url}\n\n"
+        f"This link expires in 7 days. If you weren't expecting this email, you can ignore it.\n\n"
+        f"— DocPilot"
     )
+
+    # List-Unsubscribe is best practice even on transactional mail and
+    # signals "real business" to Gmail / Outlook. We use mailto because
+    # we don't run a one-click unsubscribe URL yet.
+    extra_headers = {
+        "List-Unsubscribe": "<mailto:support@usedocpilot.com>",
+    }
 
     return send_email(
         to=to_email,
-        subject=f"You're invited to {organization_name} on DocPilot",
+        subject=subject,
         html=html,
         text=text,
+        reply_to=inviter_email,
+        headers=extra_headers,
     )

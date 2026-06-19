@@ -121,6 +121,7 @@ def create_invitation(
     #     accept-invite URL through Resend directly.
     accept_url = f"{settings.APP_BASE_URL}/accept-invite/{invite.token}"
     inviter_name = (ctx.user.full_name or ctx.user.email or "").strip() or None
+    inviter_email = (ctx.user.email or "").strip() or None
     try:
         if not existing_user:
             supabase_admin.auth.admin.invite_user_by_email(
@@ -133,6 +134,7 @@ def create_invitation(
                 organization_name=org.name,
                 role=payload.role,
                 inviter_name=inviter_name,
+                inviter_email=inviter_email,
                 accept_url=accept_url,
                 is_existing_user=True,
             )
