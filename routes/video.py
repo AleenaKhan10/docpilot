@@ -58,7 +58,7 @@ def _make_signed_url(base_url: str, video_id: int, file_path: str) -> str:
     return f"{base_url}/api/v1/videos/{video_id}/files/{file_path}?exp={exp}&sig={sig}"
 
 
-# --- 1. UPLOAD VIDEO (editor or owner) ---
+# --- 1. UPLOAD VIDEO (member, admin, owner) ---
 SUPPORTED_OUTPUT_TYPES = {
     "sop", "training", "bug_report", "changelog", "audit", "client_handover"
 }
@@ -73,9 +73,9 @@ async def create_video(
     output_type: str = Form("sop"),
     description: str = Form(""),
     db: Session = Depends(get_db),
-    ctx: OrgContext = Depends(RequireRole(["owner", "editor"])),
+    ctx: OrgContext = Depends(RequireRole(["owner", "admin", "member"])),
 ):
-    """Upload a video and start processing. Owner or editor only.
+    """Upload a video and start processing. Guest role cannot upload.
 
     Form fields:
       - title (required)

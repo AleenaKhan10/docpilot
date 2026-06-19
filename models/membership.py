@@ -26,7 +26,7 @@ class Membership(Base):
         nullable=False,
         index=True,
     )
-    role = Column(String(20), nullable=False, default="viewer")  # owner | editor | viewer
+    role = Column(String(20), nullable=False, default="guest")  # owner | admin | member | guest
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

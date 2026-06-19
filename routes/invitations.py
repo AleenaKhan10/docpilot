@@ -41,8 +41,9 @@ def create_invitation(
     db: Session = Depends(get_db),
     ctx: OrgContext = Depends(RequireRole(["owner", "admin"])),
 ):
-    # Admin can invite anyone except an owner; owner can invite any role.
-    allowed = ("admin", "editor", "viewer") if ctx.is_owner else ("editor", "viewer")
+    # Admin can invite anyone strictly below admin; owner can invite any
+    # non-owner role.
+    allowed = ("admin", "member", "guest") if ctx.is_owner else ("member", "guest")
     if payload.role not in allowed:
         raise HTTPException(
             status_code=400,

@@ -21,7 +21,7 @@ class Invitation(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     email = Column(String, nullable=False, index=True)
-    role = Column(String(20), default="viewer", nullable=False)
+    role = Column(String(20), default="guest", nullable=False)
 
     # Opaque token used in the accept-invite URL. Generated server-side, not guessable.
     token = Column(String(64), unique=True, index=True, nullable=False)

@@ -148,10 +148,14 @@ def require_user(
     return user
 
 
-VALID_ROLES = ("owner", "admin", "editor", "viewer")
+VALID_ROLES = ("owner", "admin", "member", "guest")
 
 # Roles ordered low → high. Comparing index gives a "rank".
-_ROLE_RANK = {"viewer": 0, "editor": 1, "admin": 2, "owner": 3}
+# - guest:  can NOT upload new docs; only sees docs shared with them
+# - member: can upload new docs + sees docs shared with them
+# - admin:  manages teammates, sees every doc, cannot delete others' docs
+# - owner:  manages everything including billing
+_ROLE_RANK = {"guest": 0, "member": 1, "admin": 2, "owner": 3}
 
 
 def role_rank(role: str) -> int:
@@ -180,7 +184,8 @@ class OrgContext:
 
     @property
     def can_upload(self) -> bool:
-        return self.role in ("owner", "admin", "editor")
+        # Guest is the only org role that can't create new docs.
+        return self.role in ("owner", "admin", "member")
 
 
 def require_org_member(

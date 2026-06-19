@@ -54,13 +54,13 @@ class MemberResponse(BaseModel):
 
 
 class ChangeRoleRequest(BaseModel):
-    role: str  # owner | editor | viewer
+    role: str  # owner | admin | member | guest
 
 
 # --- Invitations ---
 class InviteRequest(BaseModel):
     email: EmailStr
-    role: str = "viewer"
+    role: str = "guest"
 
 
 class InviteResponse(BaseModel):

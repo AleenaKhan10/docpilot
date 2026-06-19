@@ -81,8 +81,8 @@ def send_email(
 ROLE_DESCRIPTIONS = {
     "owner": "Manage everything in the workspace — billing, members, and every document.",
     "admin": "View every document in the workspace and manage teammates. Admins cannot delete documents that aren't theirs.",
-    "editor": "Upload screen recordings, create new documents, and edit documents you own or have been given edit access to.",
-    "viewer": "View documents that have been shared with you. Read-only access.",
+    "member": "Create new documents from screen recordings. Access shared documents with the level (view or edit) you were granted on each.",
+    "guest": "Access documents shared with you, with the level (view or edit) you were granted on each. Cannot create new documents.",
 }
 
 
