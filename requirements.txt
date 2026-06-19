@@ -22,6 +22,7 @@ weasyprint
 jinja2
 
 requests
+httpx
 tenacity
 python-magic
 slowapi

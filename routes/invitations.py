@@ -7,6 +7,7 @@ from db.session import get_db
 from core.config import settings
 from core.logger import setup_logging
 from core.supabase_admin import supabase_admin
+from services.email_service import send_invite_email
 from models.user import User
 from models.organization import Organization
 from models.membership import Membership
@@ -112,12 +113,14 @@ def create_invitation(
     db.commit()
     db.refresh(invite)
 
-    # Send the email via Supabase. We use inviteUserByEmail for users that don't
-    # exist yet (Supabase creates the auth.users row and sends the magic-link
-    # email). For existing users we don't have a clean built-in email channel,
-    # so we log the accept URL for now — the owner can copy it from the API
-    # response.
+    # Send the email. Two paths:
+    #   - Brand-new users: Supabase invite_user_by_email creates the auth.users
+    #     row AND sends a magic-link signup email. With Supabase's SMTP now
+    #     pointed at Resend, that email flows through our verified domain.
+    #   - Existing users: Supabase has no built-in for this — we send the
+    #     accept-invite URL through Resend directly.
     accept_url = f"{settings.APP_BASE_URL}/accept-invite/{invite.token}"
+    inviter_name = (ctx.user.full_name or ctx.user.email or "").strip() or None
     try:
         if not existing_user:
             supabase_admin.auth.admin.invite_user_by_email(
@@ -125,13 +128,18 @@ def create_invitation(
                 {"redirect_to": accept_url},
             )
         else:
-            logger.info(
-                f"Existing-user invite for {email} -> {accept_url} "
-                f"(send via your transactional provider; not wired yet)"
+            send_invite_email(
+                to_email=email,
+                organization_name=org.name,
+                role=payload.role,
+                inviter_name=inviter_name,
+                accept_url=accept_url,
+                is_existing_user=True,
             )
     except Exception as e:
-        logger.warning(f"Supabase invite email failed for {email}: {e}")
-        # We don't fail the call — the invitation row exists and the URL can be shared manually.
+        logger.warning(f"Invite email failed for {email}: {e}")
+        # We don't fail the call — the invitation row exists and the URL can be
+        # shared manually from the API response.
 
     return invite
 
