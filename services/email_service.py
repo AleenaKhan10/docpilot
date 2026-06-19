@@ -193,12 +193,12 @@ def _render_branded_email(
       <tr>
         <td align="center">
 
-          <!-- Wordmark -->
+          <!-- Wordmark: real logo PNG + name in a dark pill -->
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 28px;">
             <tr>
-              <td style="background-color:#0b0b0c;color:#ffffff;padding:10px 16px;border-radius:10px;font-size:15px;font-weight:700;letter-spacing:-0.01em;line-height:1;">
-                <span style="display:inline-block;vertical-align:middle;font-size:14px;line-height:1;">&#9650;</span>
-                <span style="display:inline-block;vertical-align:middle;margin-left:8px;">DocPilot</span>
+              <td style="background-color:#0b0b0c;padding:10px 18px;border-radius:10px;line-height:1;">
+                <img src="https://app.usedocpilot.com/logo-white.png" alt="" width="16" height="16" style="display:inline-block;vertical-align:middle;border:0;outline:none;text-decoration:none;" />
+                <span style="display:inline-block;vertical-align:middle;margin-left:8px;color:#ffffff;font-size:15px;font-weight:700;letter-spacing:-0.01em;line-height:1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">DocPilot</span>
               </td>
             </tr>
           </table>
