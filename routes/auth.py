@@ -39,15 +39,15 @@ def signup_org(
         )
 
     # 2. Create the Supabase auth user.
-    # email_confirm=True skips the confirmation email entirely and marks the
-    # user as confirmed at creation. Flip to False (and update the response
-    # message + frontend) when Supabase email delivery is set up.
+    # email_confirm=False means Supabase will send a confirmation email
+    # (routed through Resend SMTP) and the user can't log in until they
+    # click the link.
     try:
         created = supabase_admin.auth.admin.create_user(
             {
                 "email": email,
                 "password": payload.password,
-                "email_confirm": True,
+                "email_confirm": False,
                 "user_metadata": {"full_name": payload.full_name},
             }
         )
@@ -101,6 +101,9 @@ def signup_org(
     return SignupOrgResponse(
         user_id=user.id,
         organization_id=org.id,
-        email_confirmation_required=False,
-        message="Account created. Logging you in...",
+        email_confirmation_required=True,
+        message=(
+            f"Account created. We've sent a confirmation email to {email} — "
+            "click the link to activate your account and sign in."
+        ),
     )
