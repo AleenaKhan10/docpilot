@@ -69,11 +69,15 @@ services:
         condition: service_healthy
       api:
         condition: service_started
+    # Embedded beat (--beat) runs the cleanup_temp_data schedule from
+    # core/celery_app.py inside this worker. Fine for a single-worker
+    # deploy; if we ever scale out, split beat into its own service.
     command:
       - celery
       - -A
       - core.celery_app
       - worker
+      - --beat
       - --pool=prefork
       - --concurrency=2
       - --loglevel=info

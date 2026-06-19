@@ -169,6 +169,17 @@ def process_video_task(self, video_id: int, video_path: str):
 
         video.status = "completed"
         db.commit()
+
+        # Clean up temp_data now that durable artefacts (PDF, referenced
+        # frames) are in Supabase Storage. The hourly janitor is a
+        # fallback for crashes that skip this branch.
+        try:
+            if os.path.isdir(base_dir):
+                shutil.rmtree(base_dir, ignore_errors=True)
+                logger.info(f"Cleaned temp_data/{video_id}")
+        except Exception as cleanup_err:
+            logger.warning(f"Cleanup failed for video {video_id}: {cleanup_err}")
+
         notifier.send_update("completed", 100, "Documentation ready.")
         logger.info(f"Worker finished: video {video_id}")
         return "Done"
