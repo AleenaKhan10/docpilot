@@ -137,6 +137,7 @@ def create_invitation(
                 inviter_email=inviter_email,
                 accept_url=accept_url,
                 is_existing_user=True,
+                expires_at=invite.expires_at,
             )
     except Exception as e:
         logger.warning(f"Invite email failed for {email}: {e}")
