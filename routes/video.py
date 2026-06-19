@@ -244,6 +244,13 @@ def get_video_details(
         frame_storage_paths=video.frame_storage_paths or {},
     )
 
+    creator_name = None
+    if video.user_id:
+        from models.user import User as UserModel
+        creator = db.query(UserModel).filter(UserModel.id == video.user_id).first()
+        if creator:
+            creator_name = creator.full_name or creator.email
+
     return {
         "id": video.id,
         "title": video.title,
@@ -252,6 +259,7 @@ def get_video_details(
         "user_context": video.user_context,
         "created_at": video.created_at,
         "updated_at": video.updated_at,
+        "created_by": creator_name,
         "pdf_url": pdf_link,
         "document_json": document_json,
         "steps": formatted_steps,
@@ -345,6 +353,15 @@ def get_org_videos(
         )
         grants_by_video = {vid: acc for vid, acc in rows}
 
+    # Batch-load uploader display names so the list can render the
+    # "Created by" column without an N+1.
+    creator_ids = {v.user_id for v in videos if v.user_id}
+    creators: dict = {}
+    if creator_ids:
+        from models.user import User as UserModel
+        for u in db.query(UserModel).filter(UserModel.id.in_(creator_ids)).all():
+            creators[u.id] = u.full_name or u.email
+
     out = []
     for v in videos:
         if ctx.role == "owner" or v.user_id == ctx.user.id:
@@ -353,6 +370,7 @@ def get_org_videos(
             level = grants_by_video.get(v.id) or "view"
         d = {col.name: getattr(v, col.name) for col in v.__table__.columns}
         d["your_access"] = level
+        d["created_by"] = creators.get(v.user_id) if v.user_id else None
         out.append(d)
     return out
 

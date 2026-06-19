@@ -32,6 +32,10 @@ class VideoResponse(BaseModel):
     pdf_url: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    # Display name of the user who uploaded this doc (full_name with
+    # email fallback). Resolved server-side so the frontend can render
+    # without an extra round-trip per row.
+    created_by: Optional[str] = None
     # Rich editorial document from the two-pass synthesis. Frontend
     # prefers this over the flat steps when present.
     document_json: Optional[dict] = None
