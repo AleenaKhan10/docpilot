@@ -56,6 +56,12 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 WORKDIR /app
 COPY . .
 
+# Pre-create directories that get mounted as named volumes so they
+# inherit the right ownership when docker copies them into a fresh
+# volume on first run. Without this, the volume starts root-owned and
+# the upload route fails with PermissionError on temp_data/{id}.
+RUN mkdir -p /app/temp_data
+
 # Drop privileges
 RUN useradd -m -u 1000 docpilot && chown -R docpilot:docpilot /app
 USER docpilot
