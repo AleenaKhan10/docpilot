@@ -262,12 +262,17 @@ def get_video_details(
 def _resolve_image_refs_in_document(
     document, base_url: str, video_id: int, frame_storage_paths: dict | None = None,
 ):
-    """Translate `frame_id` references inside image blocks into signed
-    download URLs (1h TTL). Prefers Supabase Storage if the frame has been
-    uploaded; otherwise falls back to the local-disk signed-URL route.
+    """Translate `frame_id` / `storage_key` references inside image blocks
+    into signed download URLs (1h TTL). Prefers Supabase Storage when the
+    frame has been uploaded; otherwise falls back to the local-disk
+    signed-URL route.
 
-    Returns a copy; doesn't mutate the input. Idempotent: blocks that
-    already have a resolved `url` field are left alone.
+    Returns a copy; doesn't mutate the input. **Always recomputes the
+    url** for blocks that carry a frame_id or storage_key — never trust
+    the persisted url, since signed URLs expire and the host changes
+    (e.g. localhost on dev → api.usedocpilot.com on prod). Only blocks
+    that have a fully external url with no frame_id/storage_key are left
+    untouched.
     """
     if not document or not isinstance(document, dict):
         return document
@@ -284,15 +289,17 @@ def _resolve_image_refs_in_document(
             if not isinstance(block, dict):
                 continue
             b = dict(block)
-            if b.get("type") == "image" and not b.get("url"):
+            if b.get("type") == "image":
                 frame_id = b.get("frame_id")
                 storage_key = b.get("storage_key") or frame_storage_paths.get(frame_id or "")
+                # Always recompute if we have a way to. Only leave the
+                # block's url alone when it's an external/user-supplied
+                # link the resolver couldn't reproduce.
                 if storage_key:
                     url = storage_signed_url(storage_key)
                     if url:
                         b["url"] = url
-                if not b.get("url") and frame_id:
-                    # Local fallback for legacy / not-yet-uploaded frames.
+                elif frame_id:
                     inner = f"frames/{frame_id}.jpg"
                     b["url"] = _make_signed_url(base_url, video_id, inner)
             new_blocks.append(b)
