@@ -90,63 +90,62 @@ def send_invite_email(
 ) -> bool:
     """Render and send the invite email.
 
-    Copy is intentionally plain — no marketing pitch, no promotional
-    language, no emoji — because Gmail and friends downrank exactly
-    that kind of wording on a young domain. The subject names the
-    inviter so it reads as a person-to-person notification, not a
-    bulk-mail blast.
+    Branded layout: dark "▲ DocPilot" wordmark at the top, a big
+    title, a white card with the message + a black CTA button, a
+    fallback link, and a soft footer. Mirrors the GitHub /
+    Linear style — a person-to-person notification rather than a
+    marketing blast.
     """
 
     role_display = role.capitalize()
     who = inviter_name or "Someone"
     subject = f"{who} added you to {organization_name} on DocPilot"
 
-    # Hidden Gmail "preview text" — the snippet shown next to the
-    # subject in the inbox list. Plain and factual.
-    pretext = f"{who} gave you {role_display} access on DocPilot. Open the link to sign in."
+    # Hidden preview text — the snippet shown next to the subject in
+    # most email clients' inbox list.
+    pretext = (
+        f"{who} gave you {role_display} access on DocPilot. "
+        f"This invitation expires in 7 days."
+    )
 
-    html = f"""\
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{subject}</title>
-  </head>
-  <body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1a1a;">
-    <span style="display:none;color:#ffffff;font-size:1px;">{pretext}</span>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#ffffff;padding:24px 16px;">
-      <tr><td align="center">
-        <table role="presentation" width="540" cellspacing="0" cellpadding="0" border="0" style="max-width:540px;text-align:left;">
-          <tr><td style="padding-bottom:24px;">
-            <p style="font-size:14px;line-height:1.6;color:#1a1a1a;margin:0 0 16px;">Hi,</p>
-            <p style="font-size:14px;line-height:1.6;color:#1a1a1a;margin:0 0 16px;">{who} added you to <strong>{organization_name}</strong> on DocPilot as a {role_display}.</p>
-            <p style="font-size:14px;line-height:1.6;color:#1a1a1a;margin:0 0 24px;">Open the link below to sign in and start using it:</p>
-            <p style="margin:0 0 24px;">
-              <a href="{accept_url}" style="color:#1a73e8;text-decoration:underline;font-size:14px;">{accept_url}</a>
-            </p>
-            <p style="font-size:13px;line-height:1.6;color:#555555;margin:0 0 8px;">This link expires in 7 days. If you weren't expecting this email, you can ignore it.</p>
-            <p style="font-size:13px;line-height:1.6;color:#555555;margin:0;">— DocPilot</p>
-          </td></tr>
-        </table>
-      </td></tr>
-    </table>
-  </body>
-</html>
-"""
+    html = _render_branded_email(
+        title=f"{who} added you to {organization_name}",
+        pretext=pretext,
+        body_html=f"""
+        <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#1a1a1a;">Hi,</p>
+        <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#1a1a1a;">
+          <strong>{who}</strong> added you to
+          <strong>{organization_name}</strong> on DocPilot as a
+          <strong>{role_display}</strong>.
+        </p>
+        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#1a1a1a;">
+          Click the button below to sign in and open the workspace.
+        </p>
+        <p style="margin:0 0 24px;font-size:13px;line-height:1.6;color:#666666;text-align:center;">
+          This invitation expires in 7 days.
+        </p>
+        """,
+        cta_label="Accept invitation",
+        cta_url=accept_url,
+        fallback_url=accept_url,
+        footer_html=(
+            f"You're receiving this email because <strong>{who}</strong> "
+            f"added you to <strong>{organization_name}</strong> on DocPilot. "
+            f"If you weren't expecting this, you can safely ignore the email."
+        ),
+    )
 
     text = (
         f"Hi,\n\n"
         f"{who} added you to {organization_name} on DocPilot as a {role_display}.\n\n"
-        f"Open the link below to sign in and start using it:\n"
-        f"{accept_url}\n\n"
-        f"This link expires in 7 days. If you weren't expecting this email, you can ignore it.\n\n"
+        f"Accept the invitation here:\n{accept_url}\n\n"
+        f"This invitation expires in 7 days. If you weren't expecting this email, "
+        f"you can safely ignore it.\n\n"
         f"— DocPilot"
     )
 
     # List-Unsubscribe is best practice even on transactional mail and
-    # signals "real business" to Gmail / Outlook. We use mailto because
-    # we don't run a one-click unsubscribe URL yet.
+    # signals "real business" to Gmail / Outlook.
     extra_headers = {
         "List-Unsubscribe": "<mailto:support@usedocpilot.com>",
     }
@@ -159,3 +158,94 @@ def send_invite_email(
         reply_to=inviter_email,
         headers=extra_headers,
     )
+
+
+def _render_branded_email(
+    *,
+    title: str,
+    pretext: str,
+    body_html: str,
+    cta_label: str,
+    cta_url: str,
+    fallback_url: str,
+    footer_html: str,
+) -> str:
+    """Shared HTML shell for branded transactional emails.
+
+    Layout: wordmark header → title → white card with body + CTA →
+    "button not working" fallback link → muted footer. All inline
+    styles (Gmail/Outlook strip <style> blocks). Single column,
+    540px max, renders on mobile.
+    """
+    return f"""\
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+    <title>{title}</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Ubuntu,'Helvetica Neue',sans-serif;color:#1a1a1a;-webkit-font-smoothing:antialiased;">
+    <span style="display:none !important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;font-size:1px;line-height:1px;">{pretext}</span>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f6f7f9;padding:40px 16px;">
+      <tr>
+        <td align="center">
+
+          <!-- Wordmark -->
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 28px;">
+            <tr>
+              <td style="background-color:#0b0b0c;color:#ffffff;padding:10px 16px;border-radius:10px;font-size:15px;font-weight:700;letter-spacing:-0.01em;line-height:1;">
+                <span style="display:inline-block;vertical-align:middle;font-size:14px;line-height:1;">&#9650;</span>
+                <span style="display:inline-block;vertical-align:middle;margin-left:8px;">DocPilot</span>
+              </td>
+            </tr>
+          </table>
+
+          <!-- Title -->
+          <h1 style="margin:0 0 28px;font-size:22px;font-weight:600;color:#0b0b0c;text-align:center;line-height:1.3;max-width:520px;">
+            {title}
+          </h1>
+
+          <!-- Card -->
+          <table role="presentation" width="540" cellspacing="0" cellpadding="0" border="0" style="max-width:540px;background-color:#ffffff;border-radius:14px;border:1px solid #e6e8eb;box-shadow:0 1px 2px rgba(15,18,22,0.04);">
+            <tr>
+              <td style="padding:32px;">
+                {body_html}
+
+                <!-- CTA button (table-based for Outlook compat) -->
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto;">
+                  <tr>
+                    <td align="center" bgcolor="#0b0b0c" style="background-color:#0b0b0c;border-radius:10px;">
+                      <a href="{cta_url}" style="display:inline-block;padding:13px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:10px;line-height:1;">
+                        {cta_label}
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+
+                <p style="margin:32px 0 6px;font-size:12px;line-height:1.6;color:#7a7f88;">
+                  Button not working? Paste the following link into your browser:
+                </p>
+                <p style="margin:0;font-size:12px;line-height:1.6;color:#555;word-break:break-all;">
+                  <a href="{fallback_url}" style="color:#555;text-decoration:underline;">{fallback_url}</a>
+                </p>
+              </td>
+            </tr>
+          </table>
+
+          <!-- Footer -->
+          <p style="margin:24px auto 0;max-width:540px;font-size:12px;line-height:1.6;color:#8a9099;text-align:center;">
+            {footer_html}
+          </p>
+          <p style="margin:8px auto 0;max-width:540px;font-size:11px;line-height:1.5;color:#a0a4ad;text-align:center;">
+            DocPilot &middot; <a href="https://usedocpilot.com" style="color:#a0a4ad;text-decoration:none;">usedocpilot.com</a>
+          </p>
+
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+"""
