@@ -117,9 +117,32 @@ def require_user(
 
     user = db.query(User).filter(User.id == user_uuid).first()
     if not user:
-        # auth.users exists but public.users row is missing.
-        # Possible after a partial signup or manual auth.users insert.
-        raise HTTPException(status_code=404, detail="User profile not provisioned.")
+        # auth.users exists but public.users row is missing — happens for
+        # users provisioned via supabase invite_user_by_email who haven't
+        # gone through signup-org. Auto-provision from JWT claims so the
+        # caller can hit /accept-invite without a chicken-and-egg.
+        email = (payload.get("email") or "").lower().strip()
+        if not email:
+            raise HTTPException(status_code=404, detail="User profile not provisioned.")
+        meta = payload.get("user_metadata") or {}
+        full_name = meta.get("full_name") or meta.get("name") or None
+        user = User(
+            id=user_uuid,
+            email=email,
+            full_name=full_name,
+            is_active=True,
+        )
+        db.add(user)
+        try:
+            db.commit()
+            db.refresh(user)
+            logger.info(f"Auto-provisioned public.users row for {email}")
+        except Exception:
+            db.rollback()
+            # Race: another concurrent request just created it. Re-read.
+            user = db.query(User).filter(User.id == user_uuid).first()
+            if not user:
+                raise HTTPException(status_code=500, detail="Failed to provision user profile.")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User is deactivated.")
     return user
