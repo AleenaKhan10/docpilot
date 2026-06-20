@@ -60,7 +60,15 @@ class Video(Base):
     org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True, index=True)
     
     # Who uploaded it?
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id")) 
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+
+    # Snapshot of the uploader's display info captured when their user
+    # account is deleted (routes/org.py:remove_member). user_id is nulled
+    # out at the same time. Read by the video list/detail endpoints to
+    # render "Created by X (former member)" so attribution survives the
+    # author's departure.
+    created_by_name = Column(String, nullable=True)
+    created_by_email = Column(String, nullable=True)
     
     # Relationships
     owner = relationship("User", back_populates="videos")

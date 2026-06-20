@@ -245,11 +245,17 @@ def get_video_details(
     )
 
     creator_name = None
+    is_former = False
     if video.user_id:
         from models.user import User as UserModel
         creator = db.query(UserModel).filter(UserModel.id == video.user_id).first()
         if creator:
             creator_name = creator.full_name or creator.email
+    elif video.created_by_name or video.created_by_email:
+        # Uploader was removed from the org. Fall back to the snapshot
+        # captured at delete time (routes/org.py:remove_member).
+        creator_name = video.created_by_name or video.created_by_email
+        is_former = True
 
     return {
         "id": video.id,
@@ -260,6 +266,7 @@ def get_video_details(
         "created_at": video.created_at,
         "updated_at": video.updated_at,
         "created_by": creator_name,
+        "created_by_is_former": is_former,
         "pdf_url": pdf_link,
         "document_json": document_json,
         "steps": formatted_steps,
@@ -370,7 +377,15 @@ def get_org_videos(
             level = grants_by_video.get(v.id) or "view"
         d = {col.name: getattr(v, col.name) for col in v.__table__.columns}
         d["your_access"] = level
-        d["created_by"] = creators.get(v.user_id) if v.user_id else None
+        if v.user_id:
+            d["created_by"] = creators.get(v.user_id)
+            d["created_by_is_former"] = False
+        elif v.created_by_name or v.created_by_email:
+            d["created_by"] = v.created_by_name or v.created_by_email
+            d["created_by_is_former"] = True
+        else:
+            d["created_by"] = None
+            d["created_by_is_former"] = False
         out.append(d)
     return out
 

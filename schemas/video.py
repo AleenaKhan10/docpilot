@@ -34,8 +34,12 @@ class VideoResponse(BaseModel):
     updated_at: Optional[datetime] = None
     # Display name of the user who uploaded this doc (full_name with
     # email fallback). Resolved server-side so the frontend can render
-    # without an extra round-trip per row.
+    # without an extra round-trip per row. When the uploader has been
+    # deleted from the org, this falls back to the snapshot captured at
+    # delete time and created_by_is_former is True so the UI can render
+    # the "(former member)" pill.
     created_by: Optional[str] = None
+    created_by_is_former: bool = False
     # Rich editorial document from the two-pass synthesis. Frontend
     # prefers this over the flat steps when present.
     document_json: Optional[dict] = None

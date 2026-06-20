@@ -249,13 +249,24 @@ def remove_member(
                 detail="Cannot remove the last owner.",
             )
 
+    # Snapshot the user's display info before we touch any FKs — so the
+    # docs they uploaded can render "Created by X (former member)" forever
+    # even after the user row is gone.
+    target_user = db.query(User).filter(User.id == user_id).first()
+    snapshot_name = target_user.full_name if target_user else None
+    snapshot_email = target_user.email if target_user else None
+
     # Detach the removed user from any docs they uploaded in THIS org —
-    # docs survive, attribution becomes "—". Done via raw UPDATE to bypass
-    # the User.videos ORM relationship cascade.
+    # docs survive, attribution falls back to the snapshot. Raw UPDATE
+    # bypasses the User.videos ORM relationship cascade.
     db.execute(
         update(Video)
         .where(Video.user_id == user_id, Video.org_id == ctx.organization.id)
-        .values(user_id=None)
+        .values(
+            user_id=None,
+            created_by_name=snapshot_name,
+            created_by_email=snapshot_email,
+        )
     )
 
     db.delete(target)
@@ -271,7 +282,13 @@ def remove_member(
         # rows (sent invites, granted access) survive. video_access.user_id
         # rows TO this user cascade-delete via the FK ondelete=CASCADE.
         db.execute(
-            update(Video).where(Video.user_id == user_id).values(user_id=None)
+            update(Video)
+            .where(Video.user_id == user_id)
+            .values(
+                user_id=None,
+                created_by_name=snapshot_name,
+                created_by_email=snapshot_email,
+            )
         )
         db.execute(
             update(Invitation)
@@ -289,7 +306,6 @@ def remove_member(
             .values(created_by=ctx.user.id)
         )
 
-        target_user = db.query(User).filter(User.id == user_id).first()
         if target_user:
             # Revoke any pending invites still addressed to this email so
             # the row is reusable without a stale invite linking to the
