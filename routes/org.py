@@ -1,12 +1,19 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 from typing import List
 
+from core.logger import setup_logging
+from core.supabase_admin import supabase_admin
 from db.session import get_db
 from models.user import User
 from models.organization import Organization
 from models.membership import Membership
+from models.video import Video
+from models.video_access import VideoAccess
+from models.video_share import VideoShare
+from models.invitation import Invitation
 from api.debs import (
     require_user,
     require_org_member,
@@ -15,6 +22,8 @@ from api.debs import (
     VALID_ROLES,
     role_rank,
 )
+
+logger = setup_logging()
 from schemas.org import (
     OrgCreate,
     OrgResponse,
@@ -200,6 +209,14 @@ def remove_member(
     db: Session = Depends(get_db),
     ctx: OrgContext = Depends(RequireRole(["owner", "admin"])),
 ):
+    """
+    Remove a member from this organization. If this was their only
+    membership, the user account is fully deleted (public.users +
+    Supabase auth.users) so a future invite goes through fresh signup.
+
+    Docs they uploaded survive — videos.user_id is nulled out so the
+    org keeps the documentation; the UI then renders "Created by —".
+    """
     target = (
         db.query(Membership)
         .filter(
@@ -232,6 +249,73 @@ def remove_member(
                 detail="Cannot remove the last owner.",
             )
 
+    # Detach the removed user from any docs they uploaded in THIS org —
+    # docs survive, attribution becomes "—". Done via raw UPDATE to bypass
+    # the User.videos ORM relationship cascade.
+    db.execute(
+        update(Video)
+        .where(Video.user_id == user_id, Video.org_id == ctx.organization.id)
+        .values(user_id=None)
+    )
+
     db.delete(target)
+    db.flush()
+
+    other_memberships = (
+        db.query(Membership).filter(Membership.user_id == user_id).count()
+    )
+
+    if other_memberships == 0:
+        # Last org — wipe the account entirely. Reassign non-nullable FKs
+        # pointing at this user to the admin doing the removal so history
+        # rows (sent invites, granted access) survive. video_access.user_id
+        # rows TO this user cascade-delete via the FK ondelete=CASCADE.
+        db.execute(
+            update(Video).where(Video.user_id == user_id).values(user_id=None)
+        )
+        db.execute(
+            update(Invitation)
+            .where(Invitation.invited_by == user_id)
+            .values(invited_by=ctx.user.id)
+        )
+        db.execute(
+            update(VideoAccess)
+            .where(VideoAccess.granted_by == user_id)
+            .values(granted_by=ctx.user.id)
+        )
+        db.execute(
+            update(VideoShare)
+            .where(VideoShare.created_by == user_id)
+            .values(created_by=ctx.user.id)
+        )
+
+        target_user = db.query(User).filter(User.id == user_id).first()
+        if target_user:
+            # Revoke any pending invites still addressed to this email so
+            # the row is reusable without a stale invite linking to the
+            # account we just nuked.
+            db.query(Invitation).filter(
+                Invitation.email == target_user.email,
+                Invitation.status == "pending",
+            ).update({Invitation.status: "revoked"})
+            db.delete(target_user)
+
+        db.commit()
+
+        # Supabase auth delete is best-effort — if it fails the user might
+        # be able to log in again, but require_user would auto-provision a
+        # fresh public.users row (no memberships → they see "no
+        # organization" UI). Better degraded state than a half-committed
+        # transaction.
+        try:
+            supabase_admin.auth.admin.delete_user(str(user_id))
+        except Exception as e:
+            logger.warning(
+                f"Removed last membership for user {user_id} but Supabase "
+                f"auth delete failed: {e}"
+            )
+
+        return {"message": "Member removed and user account deleted."}
+
     db.commit()
     return {"message": "Member removed from organization."}

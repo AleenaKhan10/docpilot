@@ -25,6 +25,8 @@ class User(Base):
     memberships = relationship(
         "Membership", back_populates="user", cascade="all, delete-orphan"
     )
-    videos = relationship(
-        "Video", back_populates="owner", cascade="all, delete-orphan"
-    )
+    # NOTE: no cascade delete here on purpose. When a user is removed from
+    # their last org we keep their uploaded docs alive (with user_id nulled
+    # out) so the org doesn't lose documentation just because the author
+    # left. routes/org.py:remove_member is responsible for the nulling.
+    videos = relationship("Video", back_populates="owner")
