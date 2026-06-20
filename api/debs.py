@@ -143,6 +143,20 @@ def require_user(
             user = db.query(User).filter(User.id == user_uuid).first()
             if not user:
                 raise HTTPException(status_code=500, detail="Failed to provision user profile.")
+    elif not (user.full_name or "").strip():
+        # The row was auto-provisioned earlier (e.g. /orgs/mine fired on app
+        # mount during the invite flow before the recipient typed their name).
+        # The JWT may now carry the name they just set via supabase.auth.updateUser.
+        # Backfill so the team list doesn't show an empty name forever.
+        meta = payload.get("user_metadata") or {}
+        new_name = (meta.get("full_name") or meta.get("name") or "").strip()
+        if new_name:
+            user.full_name = new_name
+            try:
+                db.commit()
+                db.refresh(user)
+            except Exception:
+                db.rollback()
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User is deactivated.")
     return user
