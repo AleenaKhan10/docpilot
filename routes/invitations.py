@@ -204,14 +204,21 @@ def peek_invitation(token: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=410, detail="Invitation has expired.")
 
     org = db.query(Organization).filter(Organization.id == invite.org_id).first()
-    existing_user = (
-        db.query(User).filter(User.email == invite.email).first() is not None
+    user = db.query(User).filter(User.email == invite.email).first()
+    # has_completed_signup = a public.users row exists AND it carries a name.
+    # Auto-provision in require_user can create a row with full_name=None
+    # before the recipient ever sees the accept-invite form (the React app
+    # fires /orgs/mine on mount). Treat those rows as "row exists, signup
+    # not finished" so the form shows up and the user can set a name + password.
+    has_completed_signup = bool(
+        user and (user.full_name or "").strip()
     )
     return {
         "email": invite.email,
         "role": invite.role,
         "organization_name": org.name if org else "",
-        "existing_user": existing_user,
+        "existing_user": user is not None,
+        "has_completed_signup": has_completed_signup,
     }
 
 
