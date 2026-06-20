@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from core.config import settings
 from core.logger import setup_logging
+from core.supabase_admin import supabase_admin
 from db.session import get_db
 from models.user import User
 from models.organization import Organization
@@ -121,6 +122,23 @@ def require_user(
         # users provisioned via supabase invite_user_by_email who haven't
         # gone through signup-org. Auto-provision from JWT claims so the
         # caller can hit /accept-invite without a chicken-and-egg.
+        #
+        # CRITICAL: verify the auth.users row still exists in Supabase
+        # before creating anything. A JWT is cryptographically valid until
+        # its exp claim regardless of whether the user behind it has been
+        # deleted (browser localStorage outlives server-side deletion).
+        # Without this check, a removed user's stale JWT would silently
+        # resurrect a ghost public.users row every time their browser
+        # hit any authed endpoint.
+        try:
+            auth_resp = supabase_admin.auth.admin.get_user_by_id(str(user_uuid))
+            auth_user = getattr(auth_resp, "user", None)
+        except Exception as e:
+            logger.warning(f"Supabase auth verify failed for {user_uuid}: {e}")
+            raise _credentials_exception("Could not verify user account.")
+        if not auth_user:
+            raise _credentials_exception("User account no longer exists.")
+
         email = (payload.get("email") or "").lower().strip()
         if not email:
             raise HTTPException(status_code=404, detail="User profile not provisioned.")
