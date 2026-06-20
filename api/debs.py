@@ -120,16 +120,20 @@ def require_user(
     if not user:
         # auth.users exists but public.users row is missing — happens for
         # users provisioned via supabase invite_user_by_email who haven't
-        # gone through signup-org. Auto-provision from JWT claims so the
-        # caller can hit /accept-invite without a chicken-and-egg.
+        # gone through signup-org. Auto-provision from the LIVE auth.users
+        # row so the caller can hit /accept-invite without a chicken-and-egg.
         #
-        # CRITICAL: verify the auth.users row still exists in Supabase
-        # before creating anything. A JWT is cryptographically valid until
-        # its exp claim regardless of whether the user behind it has been
-        # deleted (browser localStorage outlives server-side deletion).
-        # Without this check, a removed user's stale JWT would silently
-        # resurrect a ghost public.users row every time their browser
-        # hit any authed endpoint.
+        # Why we go to Supabase admin instead of trusting the JWT claims:
+        #   (a) The JWT is cryptographically valid until exp regardless of
+        #       whether the user behind it still exists. A removed user's
+        #       stale JWT would otherwise resurrect a ghost public.users
+        #       row on the next authed request from their browser.
+        #   (b) JWT claims are FROZEN at issue time. After supabase.auth.
+        #       updateUser writes new metadata.full_name (which happens
+        #       during invite acceptance), the access_token in the browser
+        #       still carries the OLD empty metadata until it refreshes.
+        #       Reading from the JWT here would auto-provision with NULL
+        #       full_name and the user would forever show as "—".
         try:
             auth_resp = supabase_admin.auth.admin.get_user_by_id(str(user_uuid))
             auth_user = getattr(auth_resp, "user", None)
@@ -139,11 +143,15 @@ def require_user(
         if not auth_user:
             raise _credentials_exception("User account no longer exists.")
 
-        email = (payload.get("email") or "").lower().strip()
+        auth_meta = getattr(auth_user, "user_metadata", None) or {}
+        email = (
+            (getattr(auth_user, "email", None) or "")
+            or payload.get("email")
+            or ""
+        ).lower().strip()
         if not email:
             raise HTTPException(status_code=404, detail="User profile not provisioned.")
-        meta = payload.get("user_metadata") or {}
-        full_name = meta.get("full_name") or meta.get("name") or None
+        full_name = auth_meta.get("full_name") or auth_meta.get("name") or None
         user = User(
             id=user_uuid,
             email=email,
@@ -162,19 +170,27 @@ def require_user(
             if not user:
                 raise HTTPException(status_code=500, detail="Failed to provision user profile.")
     elif not (user.full_name or "").strip():
-        # The row was auto-provisioned earlier (e.g. /orgs/mine fired on app
-        # mount during the invite flow before the recipient typed their name).
-        # The JWT may now carry the name they just set via supabase.auth.updateUser.
-        # Backfill so the team list doesn't show an empty name forever.
-        meta = payload.get("user_metadata") or {}
-        new_name = (meta.get("full_name") or meta.get("name") or "").strip()
-        if new_name:
-            user.full_name = new_name
-            try:
-                db.commit()
-                db.refresh(user)
-            except Exception:
-                db.rollback()
+        # The row was auto-provisioned earlier with no name (typically
+        # /orgs/mine fired on app mount before the recipient typed
+        # anything into the accept-invite form). The JWT can't be trusted
+        # — see the long comment above. Pull live metadata from Supabase
+        # admin and backfill if a name is now set there.
+        try:
+            auth_resp = supabase_admin.auth.admin.get_user_by_id(str(user_uuid))
+            auth_user = getattr(auth_resp, "user", None)
+        except Exception as e:
+            logger.warning(f"Supabase auth lookup failed during backfill for {user_uuid}: {e}")
+            auth_user = None
+        if auth_user:
+            auth_meta = getattr(auth_user, "user_metadata", None) or {}
+            new_name = (auth_meta.get("full_name") or auth_meta.get("name") or "").strip()
+            if new_name:
+                user.full_name = new_name
+                try:
+                    db.commit()
+                    db.refresh(user)
+                except Exception:
+                    db.rollback()
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User is deactivated.")
     return user
